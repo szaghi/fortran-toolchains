@@ -51,7 +51,7 @@ LABEL org.opencontainers.image.source=https://github.com/szaghi/fortran-toolchai
       org.opencontainers.image.description="gfortran 16.2.0, Open MPI 5.0.11, HDF5 2.3.0 (parallel, Fortran), FoBiS"
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends cmake zlib1g-dev libfftw3-dev pkg-config git make jq python3 python3-venv \
+ && apt-get install -y --no-install-recommends cmake zlib1g-dev libfftw3-dev pkg-config git make jq gawk python3 python3-venv \
                                                ca-certificates curl xz-utils bzip2 unzip \
  && rm -rf /var/lib/apt/lists/*
 
