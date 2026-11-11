@@ -1,12 +1,12 @@
 name: Build
 
 # Builds the toolchain images and pushes them to GHCR (ghcr.io/szaghi/fortran-toolchains:<toolchain>), each also tagged
-# <toolchain>-<date> so a project can pin a build. An image is built when its directory changes on master, or on demand.
+# <toolchain>-<date> so a project can pin a build. An image is built when its directory changes on main, or on demand.
 # Every image checks its toolchain at build time (check.f90 on 2 ranks): a broken toolchain is never pushed.
 
 on:
   push:
-    branches: [master]
+    branches: [main]
     paths: ['gnu-16.2/**', '.github/workflows/build.yml']
   workflow_dispatch:
 
