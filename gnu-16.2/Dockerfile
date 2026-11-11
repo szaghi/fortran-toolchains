@@ -62,7 +62,7 @@ COPY --from=build /opt/hdf5 /opt/hdf5
 RUN python3 -m venv /opt/venv \
  && /opt/venv/bin/pip install --no-cache-dir \
       markdown markdown-include python-markdown-math toposort jinja2 pygments beautifulsoup4 tqdm importlib-metadata \
-      ford FoBiS.py gcovr
+      ford formal-ford2vitepress FoBiS.py gcovr
 
 # containers run as root: Open MPI refuses it unless told, and the runners have few cores (oversubscribe)
 ENV PATH=/opt/venv/bin:/opt/hdf5/bin:/opt/openmpi/bin:${PATH} \
