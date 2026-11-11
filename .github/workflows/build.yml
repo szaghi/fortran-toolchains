@@ -1,0 +1,58 @@
+name: Build
+
+# Builds the toolchain images and pushes them to GHCR (ghcr.io/szaghi/fortran-toolchains:<toolchain>), each also tagged
+# <toolchain>-<date> so a project can pin a build. An image is built when its directory changes on master, or on demand.
+# Every image checks its toolchain at build time (check.f90 on 2 ranks): a broken toolchain is never pushed.
+
+on:
+  push:
+    branches: [master]
+    paths: ['gnu-16.2/**', '.github/workflows/build.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  image:
+    name: ${{ matrix.toolchain }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: [gnu-16.2]
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v5
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to GHCR
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Date tag
+      id: date
+      run: echo "date=$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
+
+    - name: Build, check and push
+      uses: docker/build-push-action@v6
+      with:
+        context: ${{ matrix.toolchain }}
+        push: true
+        tags: |
+          ghcr.io/${{ github.repository }}:${{ matrix.toolchain }}
+          ghcr.io/${{ github.repository }}:${{ matrix.toolchain }}-${{ steps.date.outputs.date }}
+        build-args: JOBS=4
+        cache-from: type=gha,scope=${{ matrix.toolchain }}
+        cache-to: type=gha,mode=max,scope=${{ matrix.toolchain }}
