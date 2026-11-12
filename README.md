@@ -29,7 +29,10 @@ Nothing is installed when the job runs. The image sets:
 - `HDF5_ROOT=/opt/hdf5` (CMake's `find_package(HDF5)`); a FoBiS varset points at `/opt/hdf5/lib` and `/opt/hdf5/include`
   (static libraries: link `hdf5_fortran hdf5_f90cstub hdf5 z dl m`);
 - `OMPI_ALLOW_RUN_AS_ROOT=1`, `OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1` (containers run as root) and oversubscription by default
-  (`mpirun -np 4` on a 2-core runner).
+  (`mpirun -np 4` on a 2-core runner);
+- git `safe.directory = *` (system config): `actions/checkout` marks the workspace safe only in a temporary `HOME`, so
+  without it every later `git` of the job dies with "detected dubious ownership" (root on a checkout owned by the runner
+  user).
 
 ## Locally
 

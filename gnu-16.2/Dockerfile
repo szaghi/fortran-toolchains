@@ -55,6 +55,11 @@ RUN apt-get update \
                                                ca-certificates curl xz-utils bzip2 unzip \
  && rm -rf /var/lib/apt/lists/*
 
+# every repository is safe: in a job container actions/checkout marks the workspace safe only in a temporary HOME, so
+# any later git (the coverage outputs of ci.yml, the git diff checks) runs as root on a checkout owned by the runner
+# user and dies with "detected dubious ownership"; checked below on a repository owned by another user
+RUN git config --system --add safe.directory '*'
+
 COPY --from=build /opt/openmpi /opt/openmpi
 COPY --from=build /opt/hdf5 /opt/hdf5
 
@@ -79,4 +84,5 @@ RUN cd /tmp \
             -L/opt/hdf5/lib -lhdf5_fortran -lhdf5_f90cstub -lhdf5 -lz -ldl -lm \
  && mpirun -np 2 ./check \
  && rm -f check *.h5 \
+ && git init -q /tmp/repo && chown -R 1001:1001 /tmp/repo && git -C /tmp/repo ls-files && rm -rf /tmp/repo \
  && gfortran --version | head -1 && mpifort --version | head -1 && mpirun --version | head -1 && fobis --version
