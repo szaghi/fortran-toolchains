@@ -1,0 +1,48 @@
+name: Set up the Windows toolchain
+description: >-
+  The windows-gnu toolchain on a GitHub Windows runner: MSYS2 UCRT64 with gfortran, fpm, CMake, ninja, pkgconf and
+  Python, FoBiS at its versions.env pin. Lite only (no MPI, no HDF5: MS-MPI would be a second MPI stack and no project
+  needs it on Windows yet). Exports the environment contract and checks it; MSYS2 is rolling, so versions drifting
+  within their major warn. The job's steps that use the toolchain run with `shell: msys2 {0}`.
+
+inputs:
+  msys2-packages:
+    description: further MSYS2 packages in pacboy notation, space separated (e.g. sdl3:p mesa:p)
+    default: ''
+
+runs:
+  using: composite
+  steps:
+
+  - name: MSYS2 UCRT64
+    uses: msys2/setup-msys2@v2
+    with:
+      msystem: UCRT64
+      update: true
+      install: git
+      # python-pydantic: FoBiS's typer needs pydantic, whose pydantic-core has no wheel for MSYS2's Python (pip
+      # would build it from source, with Rust); MSYS2's package is prebuilt
+      pacboy: >-
+        gcc-fortran:p cmake:p ninja:p pkgconf:p python:p python-pip:p python-pydantic:p fpm:p ${{ inputs.msys2-packages }}
+
+  - name: FoBiS and the environment contract
+    shell: msys2 {0}
+    run: |
+      root="$(cygpath -u "$GITHUB_ACTION_PATH")/../../.."
+      fobis=$(sed -n 's/^FOBIS=//p' "$root/versions.env")
+      python -m pip install --break-system-packages --quiet "FoBiS.py==$fobis"
+      {
+        echo FC=gfortran
+        echo CC=gcc
+        echo CXX=g++
+        echo TOOLCHAIN=windows-gnu
+        echo TOOLCHAIN_OS=windows
+        echo TOOLCHAIN_FAMILY=gnu
+      } >> "$GITHUB_ENV"
+
+  - name: Check the contract and the versions
+    shell: msys2 {0}
+    run: |
+      root="$(cygpath -u "$GITHUB_ACTION_PATH")/../../.."
+      "$root/common/check-contract.sh"
+      "$root/common/check-versions.sh" --policy major --pins "$root/versions.env" GCC FPM CMAKE NINJA FOBIS
