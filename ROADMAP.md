@@ -17,29 +17,18 @@ the reusable workflows that use them. The FoBiS scaffold shrinks to thin per-rep
    per-project inputs.
 5. Out of scope: medooza and the clusters (handled separately), AMD (ROCm/amdflang), GPU execution.
 
-## WSL snapshot (2026-11-13)
+## Versions
 
-| Component | Version on WSL | Where |
-|---|---|---|
-| gcc / gfortran | 16.2.0 | `/opt/gcc/bin/16.2.0` (Lmod `gcc/16.2.0`) |
-| Open MPI (GNU) | 5.0.11 | `/opt/openmpi/bin/5.0.11/gnu/16.2.0` |
-| nvfortran | 26.9, HPC-X; CUDA 13.3 (the only one bundled) | `/opt/nvidia/hpc_sdk/Linux_x86_64/26.9` |
-| ifx / Intel MPI | 2026.2.0 / 2021.19 | `/opt/intel/oneapi/{compiler,mpi}/latest` |
-| HDF5 | develop `ab5df552` (2.3.0) | ADAM `lib/hdf5/develop/{gnu/16.2.0,nvf/26.9}`; no ifx build yet |
-| Node | 24.13.0 | nvm |
-| FoBiS / ford / formal | 3.16.9 / 7.0.13 / 0.2.16 | pipx |
-| fpm | 0.12.0 | `~/.local/bin` |
-| cmake / ninja | 3.28.3 / 1.11.1 | apt |
-| shellcheck | present | apt |
+`versions.env` holds every pin, each the latest installed on the WSL box; `scripts/wsl-versions.sh` checks it against
+WSL (`--write` regenerates it) and `common/check-versions.sh` checks every image against it at build time. Where WSL
+gets each component: gcc `/opt/gcc/bin/<ver>` (Lmod), Open MPI `/opt/openmpi/bin/<ver>/gnu/<gcc>`, nvfortran and its
+CUDA `/opt/nvidia/hpc_sdk/Linux_x86_64/<ver>`, ifx and Intel MPI `/opt/intel/oneapi/{compiler,mpi}/latest`, HDF5
+ADAM's `lib/hdf5/develop/gnu/<gcc>` (no ifx build yet), Node nvm, FoBiS/ford/formal/cmake/ninja pipx, fpm the
+release binary, numpy/h5py ADAM's regression venv, the shells apt (fish from its release-4 PPA) and Microsoft's
+repository (pwsh).
 
-## WSL upgrades CI needs first (rule 2)
-
-| Tool | WSL now | CI needs | Who |
-|---|---|---|---|
-| fpm | 0.12.0 | ≥ 0.13.0 (0.12.0 rejects the `[features]` table of fpm.toml) | VTKFortran, VecFor, FLAP, forbear, figure, every install leg |
-| cmake | 3.28.3 | ≥ the image's (3.31.6, Debian trixie), else pin the image to WSL's | FLAP alt-build, BeFoR64 doctests-sync, VTKFortran hdf5, figure |
-| zsh, fish, pwsh | absent | FLAP's shell-completion tests (pwsh's leg is silently skipped without it) | FLAP |
-| gcovr | absent | none (the templates never call `fobis coverage`) | drop it from the image instead |
+Phase 0 (2026-11-13) upgraded WSL where CI needed more: fpm 0.12.0 → 0.13.0 (0.12.0 rejects the `[features]` table
+of fpm.toml), cmake 3.28.3 → 4.4.4 and ninja → 1.13.2 (pipx), zsh, fish and pwsh installed (FLAP's completion tests).
 
 ## Images (Linux, `container:`)
 
@@ -48,14 +37,15 @@ tags. Each image: the compiler, its MPI, HDF5 2.3.0 built by that compiler, the 
 
 | Tag | Contents | Status |
 |---|---|---|
-| `gnu-16.2` | gfortran 16.2.0, Open MPI 5.0.11, HDF5 2.3.0, FFTW 3 | exists (single-directory layout, to refactor) |
+| `gnu-16.2` (+ `-lite`, `-gui`) | gfortran 16.2.0, Open MPI 5.0.11, HDF5 2.3.0, FFTW 3, LZ4, LZMA | done (Phase 1): `gnu/Dockerfile`, flavours `lite`/`full`/`gui` |
 | `nvhpc-26.9` | nvfortran 26.9, HPC-X, CUDA 13.3, HDF5 2.3.0 (recipe: ADAM's `nvf/26.9` build) | new; the SDK is 15 GB installed against ~14 GB free on a hosted runner: trim it (one CUDA, no NCCL/NVSHMEM) and free disk in the jobs. Compile-only on hosted runners. |
 | `oneapi-2026.2` | ifx 2026.2.0, Intel MPI 2021.19, HDF5 2.3.0 (new recipe) | new; ifx and MPI from Intel's apt repository, not the hpckit image |
-| `<vendor>-<ver>-gui` | + SDL/X11/Wayland headers, Xvfb, Mesa (llvmpipe) | new flavour: figure's display tests run on GNU, nvfortran and ifx |
+| `<vendor>-<ver>-gui` | + SDL/X11/Wayland headers, Xvfb, Mesa (llvmpipe) | done for gnu; nvhpc and oneapi with their images (figure's display tests run on all three) |
 
-**Shared tool layer**, pinned to the WSL versions: FoBiS, ford, formal (a lock file, so the build cache cannot
-freeze a stale version); Node 24.13.0 + npm (drops `setup-node` and the EOL Node 20); fpm; ninja; shellcheck;
-zsh, fish, pwsh; numpy, h5py (ADAM's regression oracles); cmake, git, jq, GNU awk.
+**Shared tool layer** (done in `gnu`, Phase 1), every tool at its `versions.env` pin: CMake, ninja, Node + npm
+(drops `setup-node` and the EOL Node 20), fpm, ShellCheck, fish, PowerShell as upstream release binaries; zsh from
+the distribution; FoBiS, ford, formal, numpy, h5py (ADAM's regression oracles) pinned in the venv; git, jq, GNU awk.
+A pin change rebuilds its layer, so the build cache cannot keep a stale tool. gcovr is gone (unused).
 
 ## Setups (no container possible)
 

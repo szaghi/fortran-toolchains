@@ -40,9 +40,9 @@ jobs:
         REGISTRY: ghcr.io/${{ github.repository }}
       run: |
         tag=$(scripts/build.sh ${{ matrix.vendor }} ${{ matrix.flavour }} --tag)
-        echo "tag=$tag" >> "$GITHUB_OUTPUT"
-        echo "dated=$tag-$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
         {
+          echo "tag=$tag"
+          echo "dated=$tag-$(date -u +%Y%m%d)"
           echo 'build-args<<EOF'
           scripts/build.sh ${{ matrix.vendor }} ${{ matrix.flavour }} --build-args
           echo 'JOBS=4'

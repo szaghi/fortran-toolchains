@@ -6,21 +6,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Container images of the Fortran toolchains that the projects under `~/fortran/` use in CI and to reproduce CI locally.
 Each image is **one compiler plus the MPI and HDF5 built by that compiler**, so every `.mod` (`mpi_f08`, `hdf5`) is
-readable by the image's compiler. One directory per toolchain (`gnu-16.2/` today: gfortran 16.2.0, Open MPI 5.0.11,
-HDF5 develop `ab5df552` = 2.3.0), published as `ghcr.io/szaghi/fortran-toolchains:<toolchain>` plus a
-`<toolchain>-YYYYMMDD` tag.
+readable by the image's compiler. One Dockerfile per vendor (`gnu/` today: gfortran 16.2.0, Open MPI 5.0.11, HDF5
+develop `ab5df552` = 2.3.0), three flavours, published as `ghcr.io/szaghi/fortran-toolchains:<vendor>-<major.minor>`
+(`full`), `…-lite`, `…-gui`, each also tagged `<tag>-YYYYMMDD`. Where it is going (more vendors, macOS/Windows setups,
+reusable workflows, a thin FoBiS scaffold): `ROADMAP.md`, tracked in issue #2.
 
 ## Commands
 
 ```bash
-# build (≈30 min cold: Open MPI and HDF5 from source; JOBS defaults to 8, CI passes 4)
-docker build -t ghcr.io/szaghi/fortran-toolchains:gnu-16.2 gnu-16.2
-docker build --build-arg JOBS=16 -t ghcr.io/szaghi/fortran-toolchains:gnu-16.2 gnu-16.2
+# build an image (versions from versions.env; ~5 min cold on 16 cores, ~30 on a hosted runner)
+scripts/build.sh gnu full --build-arg JOBS=16      # :gnu-16.2      (lite, gui: :gnu-16.2-lite, :gnu-16.2-gui)
+REGISTRY=local scripts/build.sh gnu lite           # tag local:gnu-16.2-lite instead of ghcr.io/...
+scripts/build.sh gnu full --tag                    # the tag; --build-args: the KEY=VALUE build arguments
 
-# rerun the toolchain check in a built image (the same commands the Dockerfile runs)
+# the versions rule: versions.env vs the WSL box (exit 1 on drift); --write rewrites versions.env from WSL
+scripts/wsl-versions.sh
+
+# rerun the checks in a built image (the same commands the Dockerfile runs)
 docker run --rm ghcr.io/szaghi/fortran-toolchains:gnu-16.2 bash -c 'cd /tmp \
   && mpifort -I/opt/hdf5/include /opt/toolchain/check.f90 -o check \
      -L/opt/hdf5/lib -lhdf5_fortran -lhdf5_f90cstub -lhdf5 -lz -ldl -lm && mpirun -np 2 ./check'
+docker run --rm -e FPM=0.13.0 ghcr.io/szaghi/fortran-toolchains:gnu-16.2 /opt/toolchain/check-versions.sh FPM
 
 # reproduce a project's CI failure inside the image
 docker run --rm -it -v $PWD:/work -w /work ghcr.io/szaghi/fortran-toolchains:gnu-16.2 bash
@@ -29,21 +35,29 @@ docker run --rm -it -v $PWD:/work -w /work ghcr.io/szaghi/fortran-toolchains:gnu
 gh run list -L 5
 ```
 
-There is no other test suite: `check.f90` is the test, and a real consumer (e.g. VTKFortran's suites, a FoBiS
-`fobis fetch && fobis build --mode tests-gnu-debug` inside the container) is the integration check.
+There is no other test suite: the build-time checks are the tests, and real consumers are the integration check (a
+project's CI test step, `fobis fetch` + `FoBiS.py rule --ex makecoverage-analysis`, run in the image on a scratch clone,
+never in the project's own tree: the container writes as root).
 
 ## Architecture
 
-- **Two-stage Dockerfile.** The `build` stage (`FROM gcc:<ver>`) compiles Open MPI (Fortran bindings, internal
-  PMIx/hwloc/libevent) into `/opt/openmpi`, then HDF5 with CMake using `mpicc`/`mpif90` into `/opt/hdf5` (parallel,
-  Fortran, HL, **static only**, `-fPIC`, deflate on, szip off). The runtime stage (same `gcc` base) copies `/opt/openmpi`
-  and `/opt/hdf5`, installs the Debian tools, and puts the Python tools in the venv `/opt/venv`, because Debian's
-  Python is externally managed.
-- **The check gate is a `RUN` in the Dockerfile**, not a CI step: it compiles `check.f90` against the image's
-  modules, runs it on 2 ranks (a collective parallel-HDF5 write, the deflate filter registered), and runs `git` on a
-  repo owned by uid 1001. If any of these fails, the image is never built, so `build-push-action` never pushes it.
-- **CI (`.github/workflows/build.yml`)** builds and pushes on push to `main` (filtered by `paths`) or by
-  `workflow_dispatch`, one matrix entry per toolchain, with the GHA layer cache scoped per toolchain.
+- **`gnu/Dockerfile` stages.** `cmake` (the pinned CMake release) and `tools` (ninja, Node, fpm, ShellCheck, fish,
+  PowerShell: upstream release binaries, checksums verified where published) are download stages. `build` compiles
+  Open MPI (Fortran bindings, internal PMIx/hwloc/libevent) into `/opt/openmpi`, then HDF5 with the pinned CMake and
+  `mpicc`/`mpif90` into `/opt/hdf5` (parallel, Fortran, HL, **static only**, `-fPIC`, deflate on, szip off). CMake is
+  copied in after Open MPI, so a tool bump never rebuilds Open MPI. The public stages are the flavours: `lite` (gcc
+  base + Debian basics + the tools + the venv `/opt/venv`, pinned pip packages), `full` (`lite` + MPI, HDF5, FFTW,
+  LZ4, LZMA), `gui` (`full` + X11/Wayland headers, Xvfb, Mesa).
+- **Versions are build arguments, from `versions.env` only.** `scripts/build.sh` passes them (locally and in CI); no
+  ARG has a default, so a build without them fails instead of using a stale version. The build context is the repository
+  root (`.dockerignore` sends only `common/` and the vendor directories).
+- **The checks are `RUN`s in the Dockerfile**, not CI steps: `common/check-versions.sh` (every component at its pin) in
+  every flavour; `check.f90` on 2 ranks (a collective parallel-HDF5 write, the deflate filter) and the LZ4/LZMA link in
+  `full`; Xvfb + `glxinfo` showing llvmpipe in `gui`; `git` on a repo owned by uid 1001. A failing check fails the
+  build, so `build-push-action` never pushes a broken image.
+- **CI (`.github/workflows/build.yml`)** builds and pushes one job per (vendor, flavour) on push to `main` (filtered by
+  `paths`) or by `workflow_dispatch`, with the GHA layer cache scoped per (vendor, flavour). `REGISTRY` comes from
+  `github.repository`.
 
 ## The consumer contract
 
@@ -62,30 +76,32 @@ Before you remove a package or tool from the image, grep the FoBiS scaffold temp
 workflows (`grep -rl fortran-toolchains ~/fortran/*/.github/workflows`; about 18 repos) for its use. A project
 installs what it alone needs through `toolchain_packages`, not through this image.
 
-Environment that consumers rely on: `PATH` (venv, `/opt/hdf5/bin`, `/opt/openmpi/bin`), `HDF5_ROOT=/opt/hdf5` (CMake
-`find_package(HDF5)`), the static link line `hdf5_fortran hdf5_f90cstub hdf5 z dl m`, `OMPI_ALLOW_RUN_AS_ROOT{,_CONFIRM}=1`
-(containers run as root), and `PRTE_MCA_rmaps_default_mapping_policy=:oversubscribe` (`mpirun -np 4` on a 2-core
-runner).
+Environment that consumers rely on: `PATH` (venv, `/opt/tools/bin`, `/opt/cmake/bin`, `/opt/hdf5/bin`,
+`/opt/openmpi/bin`), `HDF5_ROOT=/opt/hdf5` (CMake `find_package(HDF5)`), the static link line
+`hdf5_fortran hdf5_f90cstub hdf5 z dl m`, `OMPI_ALLOW_RUN_AS_ROOT{,_CONFIRM}=1` (containers run as root), and
+`PRTE_MCA_rmaps_default_mapping_policy=:oversubscribe` (`mpirun -np 4` on a 2-core runner).
 
 ## Adding or changing a toolchain
 
-- A new toolchain is a new directory (`gnu-17.1/`, `nvhpc-26.9/`) with its own `Dockerfile` and `check.f90`, **plus**
-  a `matrix.toolchain` entry **and** a `paths` entry in `build.yml`. Without the `paths` entry, a push to the new
-  directory does not trigger a build.
-- Any change to `build.yml` rebuilds every toolchain in the matrix.
-- **Every toolchain tracks the latest version installed on the WSL box** (newest `/opt/gcc/bin/<ver>`,
-  `/opt/nvidia/hpc_sdk/Linux_x86_64/<ver>`, `/opt/intel/oneapi/compiler/latest`, …; Lmod-managed stacks, not the apt
-  `/usr/bin/gfortran`). Read versions from the WSL box, never from a consumer's workflow. No image is kept for an old
-  version: repos still on older ones get ported. MPI and HDF5 match the workstation build (ADAM's HDF5 commit); the
-  only intended difference is HDF5's deflate filter.
+- **Every component tracks the latest version installed on the WSL box** (newest `/opt/gcc/bin/<ver>`,
+  `/opt/nvidia/hpc_sdk/Linux_x86_64/<ver>`, `/opt/intel/oneapi/compiler/latest`, the pipx/apt tools, …; Lmod-managed
+  stacks, not the apt `/usr/bin/gfortran`). Read versions from the WSL box (`scripts/wsl-versions.sh --write`), never
+  from a consumer's workflow. When CI needs a newer tool than WSL has, WSL is upgraded first. No image is kept for an
+  old version: repos still on older ones get ported. MPI and HDF5 match the workstation build (ADAM's HDF5 commit);
+  the only intended difference is HDF5's deflate filter.
+- A new pin: a line in `versions.env`, a probe in `scripts/wsl-versions.sh` and in `common/check-versions.sh`, an `ARG`
+  in the stage that uses it, its name in that flavour's `check-versions.sh` call.
+- A new vendor: a directory with its `Dockerfile` and checks, a version rule in `scripts/build.sh` (`case $vendor`),
+  and an entry in the `matrix.vendor` **and** the `paths` filter of `build.yml` (without it a push to the directory
+  does not trigger a build).
+- Any change to `build.yml`, `versions.env`, `common/` or `scripts/build.sh` rebuilds every image in the matrix.
 - Projects move to a new toolchain by changing `toolchain_image` in each `fobos`, then `fobis scaffold sync`.
 
 ## Gotchas
 
-- **The pip layer is unpinned and cached.** `FoBiS.py ford formal-ford2vitepress gcovr …` have no versions, and
-  `cache-from: type=gha` reuses that layer until an earlier layer changes. A rebuild does not pick up a new FoBiS
-  release unless you invalidate the layer (pin versions, or change something earlier in the Dockerfile).
 - **Tags are mutable.** All consumers track the floating `:gnu-16.2`, so a push reaches every project's next CI run.
   A second build on the same day overwrites the date tag.
-- The image reports versions at the end of the check `RUN` (`gfortran`, `mpifort`, `mpirun`, `fobis`). Read them in
-  the build log after a change.
+- **Upstream checksum files are not uniform**: PowerShell's `hashes.sha256` is UTF-16LE with CRLF (`iconv` first);
+  ninja, ShellCheck and fish publish none.
+- h5py's wheel bundles its own serial HDF5 (2.0.0 with h5py 3.16.0), distinct from `/opt/hdf5`; the file format is
+  compatible, the library is not the image's.
