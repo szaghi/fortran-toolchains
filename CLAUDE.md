@@ -89,7 +89,8 @@ never in the project's own tree: the container writes as root).
 - **Contract workflow** (`.github/workflows/contract.yml`): the published `full` images as job containers (their tags
   computed by `scripts/build.sh` from `versions.env`, never written in the workflow) and the three setups on their
   runners. Runs after a successful Build, and on changes to the actions or `common/`.
-- **Reusable workflows** (`workflow_call`: `test`, `matrix`, `generated`, `fpm`; README has the table): a `plan` job
+- **Reusable workflows** (`workflow_call`: `test`, `matrix`, `generated`, `fpm`, `docs`, `release`, `install`; README
+  has the table): a `plan` job
   resolves version-less toolchain ids (`linux-gnu`, `macos-gnu`, ...) through `scripts/plan.sh` (images from
   `scripts/build.sh --tag`), then the work runs in the image as a job container, or through a setup action on macOS and
   Windows. They take this repository's scripts and actions from a checkout at `toolchains-ref` (default `v1`) into
@@ -97,7 +98,13 @@ never in the project's own tree: the container writes as root).
   test the released actions instead of the commit. `toolchains-ref: ''` means the caller's checkout (this repository).
   The default `toolchains-repository` names this repository (a reusable workflow cannot know its own repository).
 - **Selftest** (`.github/workflows/selftest.yml`) calls every reusable workflow on `tests/fixture` (a tiny FoBiS
-  project with what each workflow drives) with `toolchains-ref: ''`: the gate of the workflows, on all toolchains.
+  project with what each workflow drives) with `toolchains-ref: ''`: the gate of the workflows, on all toolchains. Its
+  `docs` job deploys the fixture's site to this repository's Pages from `main` (https://szaghi.github.io/fortran-toolchains/);
+  `release` is a dry run (the fixture's v1.2.3 as an artifact); `install` installs PENF's latest release.
+- **docs, release, install** keep the scaffold's split: `docs` runs on the caller's `workflow_run` of CI and takes the
+  coverage from test's `coverage-docs` artifact; `install` is a second job of the caller's release workflow (a release
+  published with `GITHUB_TOKEN` starts no workflow). A called workflow gets at most the permissions its caller grants
+  (`docs`: contents/actions read, pages/id-token write; `release`: contents write), else the run fails at startup.
 - **Release**: `v1` is a moving major tag; `scripts/release.sh X.Y.Z` tags and moves it once Build, Contract and
   Selftest are green on HEAD. A breaking change of a workflow's inputs is a new major (`v2`) and a new default
   `toolchains-ref`.
@@ -153,6 +160,9 @@ Environment that consumers rely on: `PATH` (venv, `/opt/tools/bin`, `/opt/cmake/
 - The macOS and Windows setups cannot be run locally: `setup/macos.sh` can be driven on Linux with a stub `brew`
   and `gfortran-16` pointing at a real gfortran (WSL's gcc 16.2 and Open MPI 5.0.11 stand in for Homebrew's), and
   `setup/linux-bare.sh` runs as-is in a plain `ubuntu:24.04` container.
+- **act and `actions/checkout`**: act checks out the local tree only for a checkout without `ref`; any `ref:`, even an
+  empty expression, makes it fetch from GitHub (a commit never pushed: "not our ref"). A ref-dependent checkout is a
+  separate step under an `if`. act's runner image has no `gh`: the workflows call the REST API with curl.
 - **act and reusable workflows**: run act on a throwaway repository holding the tree (`git init`, one commit with
   `-c commit.gpgsign=false`, `origin` set to the GitHub URL): in a git worktree `.git` points outside the container (a
   workflow's `git` fails), and without `origin` act takes `github.repository` as `nektos/act`. act's artifact server

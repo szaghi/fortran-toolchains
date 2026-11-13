@@ -68,8 +68,8 @@ Inputs carry the project specifics (toolchain, fobos modes, check paths, package
 | `matrix` (a project script on a list of toolchains, any OS; see below) | FLAP/forbear matrix.yml, StringiFor compilers.yml, figure platforms.yml | done (Phase 4) |
 | `generated` (regenerate, then any change under the paths fails with the diff) | docs-examples of FiNeR, FoXy, FUNDAL, StringiFor, VecFor, VTKFortran, FLAP/forbear jobs; doctests-sync of BeFoR64, StringiFor | done (Phase 4): one workflow, both are "regenerate, then diff" |
 | `fpm` (test, release build, the toolchain's compilers) | VecFor, VTKFortran, figure, FLAP/forbear jobs | done (Phase 4); publishing (figure's fpm tag) not yet |
-| `docs` (build on `workflow_run`, deploy with a long `deploy-pages` timeout) | scaffold docs.yml, FOSSIL's timeout patch, ADAM docs.yml, appelbe docs.yml | to do |
-| `release`, `install` (bare runner, `setup-linux-bare`) | scaffold release.yml, install.yml | to do |
+| `docs` (build on `workflow_run`, deploy with a long `deploy-pages` timeout) | scaffold docs.yml, FOSSIL's timeout patch, ADAM docs.yml, appelbe docs.yml | done (Phase 4): coverage `auto`/`run`/`none` (appelbe: `none`), `build-command` (ADAM's has no `predocs:build`), 30-minute deploy timeout |
+| `release`, `install` (bare runner, `setup-linux-bare`) | scaffold release.yml, install.yml | done (Phase 4): `release` with `dry-run`; `install` per build system the tarball carries |
 | nightly runs | FOSSIL validation.yml | a caller's `schedule` on `matrix` or `test`: no workflow of its own |
 
 `test` stays separate from `matrix` for now (its coverage feeds the docs artifact); merging them (`matrix` with one
@@ -149,7 +149,8 @@ Contract and Selftest are green on it. Images are versioned by their own tags (`
 
 Blockers met on the way, not toolchain issues: FiNeR and FLAP `CMakeLists.txt` declare stale `project(VERSION)`
 (the scaffold's `release.sh` refuses to release them); VTKFortran's fpm job and FOSSIL's Pages timeout are lost by a
-scaffold sync until `fpm` and `docs` absorb them; FOSSIL's nightly validation fails 2 of 35 programs (2026-11-12).
+scaffold sync until `fpm` and `docs` absorb them; FOSSIL's nightly validation fails 2 of 35 programs (2026-11-12); PENF v2.0.1's `makefile` passes `-DR16P`, which the
+sources renamed `PENF_R16P`, so its make install fails (found by `install`, 2026-11-13; Selftest skips that leg).
 
 ## Deferred
 

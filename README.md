@@ -73,9 +73,9 @@ and `fobis`, `fpm`, `python3` (>= 3.11), `cmake`, `ninja`, `pkg-config` on `PATH
 Containers run only on Linux runners, so the other platforms get a composite action of this repository:
 
 ```yaml
-- uses: szaghi/fortran-toolchains/.github/actions/setup-macos@main     # macos-15; with: {flavour: full} adds Open MPI, HDF5
-- uses: szaghi/fortran-toolchains/.github/actions/setup-windows@main   # windows-latest; steps then use shell: msys2 {0}
-- uses: szaghi/fortran-toolchains/.github/actions/setup-linux-bare@main  # a fresh ubuntu-24.04 (installer tests)
+- uses: szaghi/fortran-toolchains/.github/actions/setup-macos@v1      # macos-15; with: {flavour: full} adds Open MPI, HDF5
+- uses: szaghi/fortran-toolchains/.github/actions/setup-windows@v1    # windows-latest; steps then use shell: msys2 {0}
+- uses: szaghi/fortran-toolchains/.github/actions/setup-linux-bare@v1   # a fresh ubuntu-24.04 (installer tests)
 ```
 
 - **macOS**: Homebrew gcc (the major of the `GCC` pin; `FC=gfortran-16`), fpm, ninja, pkg-config; CMake and FoBiS at
@@ -110,14 +110,57 @@ jobs:
     uses: szaghi/fortran-toolchains/.github/workflows/fpm.yml@v1
 ```
 
+The documentation and the releases are workflows of their own, as in the FoBiS scaffold:
+
+```yaml
+# docs.yml: after CI, the site built with CI's coverage and deployed to Pages from the default branch
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read             # the coverage-docs artifact of the CI run
+  pages: write
+  id-token: write
+jobs:
+  docs:
+    uses: szaghi/fortran-toolchains/.github/workflows/docs.yml@v1
+```
+
+```yaml
+# release.yml: the pushed tag's release, then the release installed on a fresh runner
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+permissions:
+  contents: write
+jobs:
+  release:
+    uses: szaghi/fortran-toolchains/.github/workflows/release.yml@v1
+  install:
+    needs: release
+    uses: szaghi/fortran-toolchains/.github/workflows/install.yml@v1
+    with:
+      tag: ${{ github.ref_name }}
+```
+
+A called workflow gets at most the permissions its caller grants: `docs` needs the four above, `release`
+`contents: write`. The install job is the caller's because a release published with `GITHUB_TOKEN` starts no workflow.
+
 | Workflow | What it does | Main inputs |
 |---|---|---|
 | `test.yml` | `FoBiS.py fetch` (when the project has dependencies), the coverage command (the scaffold's `makecoverage-analysis`), the coverage as output and summary, the coverage outputs under `docs/` packed for the docs (failing on an empty list) | `toolchain`, `command`, `pack-coverage` |
 | `matrix.yml` | the project script on each toolchain: Linux ones in the images, macOS and Windows through the setup actions; a display for GUI programs (Linux: the `-gui` image under Xvfb; Windows: Mesa llvmpipe) | `toolchains`, `script`, `display`, `*-packages`, `artifacts` |
 | `generated.yml` | the project's regeneration in an image, then any change or new file under the paths fails with the diff (docs examples, doctests) | `command`, `paths` |
 | `fpm.yml` | `fpm test`, `fpm build --profile release`, with `FPM_FC`/`FPM_CC`/`FPM_CXX` from the toolchain | `toolchain`, `test-command`, `build-command` |
+| `docs.yml` | the site built in an image (`npm run docs:build`: formal through `predocs:build`, then VitePress) with the coverage badge (`docs/public/coverage.json`, a shields endpoint) from test's `coverage-docs` artifact (of the triggering run, else of this run, else the coverage command runs here), deployed to Pages from the default branch only (a 30-minute deployment limit) | `build-command`, `site`, `coverage`, `deploy` |
+| `release.yml` | the tag's GitHub release: the tarball `<name>-<tag>.tar.gz`, the tag's `CHANGELOG.md` section as notes (`scripts/release-notes.py`), the assets (`scripts/install.sh`); `dry-run` uploads them as an artifact instead | `assets`, `excludes`, `changelog`, `dry-run` |
+| `install.yml` | a published release installed on a fresh runner (the linux-bare toolchain): its `install.sh` builds the release's tarball with each build system it carries (make, cmake, fobis), fpm builds its `fpm.toml` | `tag`, `repository`, `builds` |
 
-Every workflow takes `working-directory` (the project inside the repository) and `apt-packages`. A nightly run is a
+Every workflow but `install.yml` takes `working-directory` (the project inside the repository), and every one but
+`release.yml` `apt-packages`. A nightly run is a
 caller's `schedule` on any of them.
 
 **Toolchain ids carry no version** (`linux-gnu`, `linux-nvhpc`, `linux-oneapi`, `macos-gnu`, `windows-gnu`): the
