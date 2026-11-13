@@ -35,3 +35,27 @@ jobs:
       display: true
       working-directory: tests/fixture
       toolchains-ref: ''
+
+  test:
+    uses: ./.github/workflows/test.yml
+    with:
+      working-directory: tests/fixture
+      pack-coverage: always
+      toolchains-ref: ''
+
+  test-coverage:
+    needs: test
+    runs-on: ubuntu-24.04
+    steps:
+    - name: The coverage output and the coverage-docs artifact
+      uses: actions/download-artifact@v8
+      with:
+        name: coverage-docs
+
+    - name: Check them
+      env:
+        PCT: ${{ needs.test.outputs.coverage }}
+      run: |
+        echo "coverage output: $PCT"
+        [ "$PCT" = 100.0 ]
+        tar -tzf coverage-docs.tgz | tee /dev/stderr | grep -qx 'docs/public/coverage.json'

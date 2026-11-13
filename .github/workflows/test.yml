@@ -1,0 +1,151 @@
+name: Test
+
+# Reusable: the project's tests with coverage in one Linux toolchain image, the coverage percentage as an output, and
+# the coverage outputs under docs/ packed for the docs workflow (the coverage-docs artifact):
+#
+#   jobs:
+#     test:
+#       uses: szaghi/fortran-toolchains/.github/workflows/test.yml@v1
+#
+# The defaults are the FoBiS scaffold's: `FoBiS.py fetch` when the project has dependencies, then
+# `FoBiS.py rule --ex makecoverage-analysis`, which writes docs/public/coverage.json. The packing fails on an empty list
+# (a failing git, e.g. "dubious ownership", once left an empty artifact and the docs published a stale coverage).
+
+on:
+  workflow_call:
+    inputs:
+      toolchain:
+        description: a Linux toolchain id (linux-gnu, linux-nvhpc, linux-oneapi)
+        type: string
+        default: linux-gnu
+      command:
+        description: the tests with coverage, run with bash from working-directory
+        type: string
+        default: FoBiS.py rule --ex makecoverage-analysis
+      coverage-json:
+        description: the coverage badge JSON the command writes ({"pct":"87.3"}), relative to working-directory
+        type: string
+        default: docs/public/coverage.json
+      pack-coverage:
+        description: pack the coverage outputs under docs/ (default-branch - on a push to the default branch; always; never)
+        type: string
+        default: default-branch
+      working-directory:
+        description: the project's directory in the repository
+        type: string
+        default: .
+      apt-packages:
+        description: Debian packages installed in the image first
+        type: string
+        default: ''
+      toolchains-ref:
+        description: the ref of this repository whose scripts are used; empty for the caller's checkout
+        type: string
+        default: v1
+      toolchains-repository:
+        description: this repository
+        type: string
+        default: szaghi/fortran-toolchains
+    outputs:
+      coverage:
+        description: the overall line coverage percentage (e.g. 87.3)
+        value: ${{ jobs.test.outputs.coverage }}
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      image: ${{ steps.plan.outputs.image }}
+    steps:
+    - name: Checkout the caller
+      if: inputs.toolchains-ref == ''
+      uses: actions/checkout@v7
+
+    - name: Checkout fortran-toolchains
+      if: inputs.toolchains-ref != ''
+      uses: actions/checkout@v7
+      with:
+        repository: ${{ inputs.toolchains-repository }}
+        ref: ${{ inputs.toolchains-ref }}
+
+    - name: Image
+      id: plan
+      env:
+        REGISTRY: ghcr.io/${{ inputs.toolchains-repository }}
+        TOOLCHAIN: ${{ inputs.toolchain }}
+      run: |
+        image=$(scripts/plan.sh "$TOOLCHAIN" | sed -n 's/^linux=//p' | jq -r '.[0].image // empty')
+        [ -n "$image" ] || { echo "::error::$TOOLCHAIN is not a Linux toolchain"; exit 1; }
+        echo "image=$image" | tee -a "$GITHUB_OUTPUT"
+
+  test:
+    needs: plan
+    runs-on: ubuntu-24.04
+    container: ${{ needs.plan.outputs.image }}
+    outputs:
+      coverage: ${{ steps.coverage.outputs.pct }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v7
+
+    - name: Packages
+      if: inputs.apt-packages != ''
+      env:
+        PACKAGES: ${{ inputs.apt-packages }}
+      # PACKAGES is a word list
+      run: |
+        # shellcheck disable=SC2086
+        apt-get update -qq && apt-get install -y -qq --no-install-recommends $PACKAGES
+
+    - name: Fetch dependencies
+      run: |
+        if [ -n "$(find . -name .deps_config.ini -not -path './.git/*' | head -1)" ]; then FoBiS.py fetch; fi
+
+    - name: Tests with coverage
+      env:
+        COMMAND: ${{ inputs.command }}
+      run: bash -c "$COMMAND"
+
+    - name: Coverage
+      id: coverage
+      env:
+        JSON: ${{ inputs.coverage-json }}
+      run: |
+        pct=$(jq -r '.pct' "$JSON")
+        echo "pct=$pct" >> "$GITHUB_OUTPUT"
+        echo "## Test coverage: $pct%" >> "$GITHUB_STEP_SUMMARY"
+
+    # every file the coverage wrote or changed under docs/, git-ignored ones included, so the docs workflow sees what a
+    # local run would; an empty list fails, else the docs would publish the committed, stale coverage
+    - name: Pack the coverage outputs for the docs
+      if: >-
+        inputs.pack-coverage == 'always' || (inputs.pack-coverage == 'default-branch' && github.event_name == 'push' &&
+        github.ref == format('refs/heads/{0}', github.event.repository.default_branch))
+      run: |
+        git ls-files --others --modified -- docs | while IFS= read -r f; do
+          if [ -f "$f" ]; then printf '%s\n' "$f"; fi
+        done > coverage-docs.list
+        cat coverage-docs.list
+        if [ ! -s coverage-docs.list ]; then
+          echo "::error::no coverage outputs under docs/ to pack for the docs"
+          exit 1
+        fi
+        tar -czf coverage-docs.tgz -T coverage-docs.list
+
+    - name: Upload the coverage outputs for the docs
+      if: >-
+        inputs.pack-coverage == 'always' || (inputs.pack-coverage == 'default-branch' && github.event_name == 'push' &&
+        github.ref == format('refs/heads/{0}', github.event.repository.default_branch))
+      uses: actions/upload-artifact@v7
+      with:
+        name: coverage-docs
+        path: ${{ inputs.working-directory }}/coverage-docs.tgz
+        if-no-files-found: error
+        retention-days: 1
