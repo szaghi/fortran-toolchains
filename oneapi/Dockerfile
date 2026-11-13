@@ -81,6 +81,7 @@ RUN /tmp/build-hdf5.sh mpicc mpiifx
 # -------------------------------------------------------------------------------------------------------------- lite
 FROM oneapi AS lite
 ARG UBUNTU
+ARG TOOLCHAIN
 ARG IFX
 ARG NODE
 ARG FOBIS
@@ -108,8 +109,17 @@ RUN /opt/toolchain/install-venv.sh
 
 ENV PATH=/opt/venv/bin:/opt/tools/bin:/opt/cmake/bin:${PATH}
 
+# the environment contract of every toolchain (common/check-contract.sh): the C side is the distribution's gcc/g++
+ENV FC=ifx \
+    CC=gcc \
+    CXX=g++ \
+    TOOLCHAIN=${TOOLCHAIN} \
+    TOOLCHAIN_OS=linux \
+    TOOLCHAIN_FAMILY=intel
+
 RUN /opt/toolchain/check-versions.sh UBUNTU IFX NODE FOBIS FORD FORMAL FPM CMAKE NINJA SHELLCHECK ZSH FISH PWSH NUMPY H5PY \
- && /opt/toolchain/check-image.sh lite
+ && /opt/toolchain/check-image.sh lite \
+ && /opt/toolchain/check-contract.sh
 
 # -------------------------------------------------------------------------------------------------------------- full
 # + the Intel MPI development files, HDF5, FFTW 3, LZ4, LZMA
@@ -128,10 +138,13 @@ RUN /opt/toolchain/install-base.sh full \
 COPY --from=build /opt/hdf5 /opt/hdf5
 
 ENV PATH=/opt/hdf5/bin:${PATH} \
-    HDF5_ROOT=/opt/hdf5
+    HDF5_ROOT=/opt/hdf5 \
+    MPIFC=mpiifx \
+    MPIRUN=mpirun
 
 RUN /opt/toolchain/check-image.sh full mpiifx \
- && /opt/toolchain/check-versions.sh INTEL_MPI HDF5
+ && /opt/toolchain/check-versions.sh INTEL_MPI HDF5 \
+ && /opt/toolchain/check-contract.sh --mpi
 
 # --------------------------------------------------------------------------------------------------------------- gui
 FROM full AS gui

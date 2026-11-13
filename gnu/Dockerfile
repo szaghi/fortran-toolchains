@@ -60,6 +60,7 @@ RUN /tmp/build-hdf5.sh mpicc mpif90
 # gfortran and the tools, no MPI nor HDF5
 FROM gcc:${GCC} AS lite
 ARG GCC
+ARG TOOLCHAIN
 ARG NODE
 ARG FOBIS
 ARG FORD
@@ -87,8 +88,17 @@ RUN /opt/toolchain/install-venv.sh
 
 ENV PATH=/opt/venv/bin:/opt/tools/bin:/opt/cmake/bin:${PATH}
 
+# the environment contract of every toolchain (common/check-contract.sh): the C side is the distribution's gcc/g++
+ENV FC=gfortran \
+    CC=gcc \
+    CXX=g++ \
+    TOOLCHAIN=${TOOLCHAIN} \
+    TOOLCHAIN_OS=linux \
+    TOOLCHAIN_FAMILY=gnu
+
 RUN /opt/toolchain/check-versions.sh GCC NODE FOBIS FORD FORMAL FPM CMAKE NINJA SHELLCHECK ZSH FISH PWSH NUMPY H5PY \
- && /opt/toolchain/check-image.sh lite
+ && /opt/toolchain/check-image.sh lite \
+ && /opt/toolchain/check-contract.sh
 
 # -------------------------------------------------------------------------------------------------------------- full
 # + Open MPI, HDF5, FFTW 3, LZ4, LZMA
@@ -109,10 +119,13 @@ ENV PATH=/opt/hdf5/bin:/opt/openmpi/bin:${PATH} \
     HDF5_ROOT=/opt/hdf5 \
     OMPI_ALLOW_RUN_AS_ROOT=1 \
     OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 \
-    PRTE_MCA_rmaps_default_mapping_policy=:oversubscribe
+    PRTE_MCA_rmaps_default_mapping_policy=:oversubscribe \
+    MPIFC=mpifort \
+    MPIRUN=mpirun
 
 RUN /opt/toolchain/check-image.sh full mpifort \
- && /opt/toolchain/check-versions.sh OPENMPI HDF5
+ && /opt/toolchain/check-versions.sh OPENMPI HDF5 \
+ && /opt/toolchain/check-contract.sh --mpi
 
 # --------------------------------------------------------------------------------------------------------------- gui
 # + what GUI programs need to build and run without a display or a GPU

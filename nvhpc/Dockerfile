@@ -80,6 +80,7 @@ RUN /tmp/build-hdf5.sh mpicc mpifort
 # -------------------------------------------------------------------------------------------------------------- lite
 FROM sdk AS lite
 ARG UBUNTU
+ARG TOOLCHAIN
 ARG NVHPC
 ARG CUDA
 ARG NODE
@@ -108,8 +109,17 @@ RUN /opt/toolchain/install-venv.sh
 
 ENV PATH=/opt/venv/bin:/opt/tools/bin:/opt/cmake/bin:${PATH}
 
+# the environment contract of every toolchain (common/check-contract.sh): the C side is the distribution's gcc/g++
+ENV FC=nvfortran \
+    CC=gcc \
+    CXX=g++ \
+    TOOLCHAIN=${TOOLCHAIN} \
+    TOOLCHAIN_OS=linux \
+    TOOLCHAIN_FAMILY=nvf
+
 RUN /opt/toolchain/check-versions.sh UBUNTU NVHPC CUDA NODE FOBIS FORD FORMAL FPM CMAKE NINJA SHELLCHECK ZSH FISH PWSH NUMPY H5PY \
- && /opt/toolchain/check-image.sh lite
+ && /opt/toolchain/check-image.sh lite \
+ && /opt/toolchain/check-contract.sh
 
 # -------------------------------------------------------------------------------------------------------------- full
 FROM lite AS full
@@ -122,10 +132,13 @@ RUN /opt/toolchain/install-base.sh full
 COPY --from=build /opt/hdf5 /opt/hdf5
 
 ENV PATH=/opt/hdf5/bin:${PATH} \
-    HDF5_ROOT=/opt/hdf5
+    HDF5_ROOT=/opt/hdf5 \
+    MPIFC=mpifort \
+    MPIRUN=mpirun
 
 RUN /opt/toolchain/check-image.sh full mpifort \
- && /opt/toolchain/check-versions.sh HDF5
+ && /opt/toolchain/check-versions.sh HDF5 \
+ && /opt/toolchain/check-contract.sh --mpi
 
 # --------------------------------------------------------------------------------------------------------------- gui
 FROM full AS gui

@@ -33,6 +33,8 @@ case $vendor in
   *)      echo "error: no version rule for vendor '$vendor'" >&2; exit 2 ;;
 esac
 tag="$registry:$vendor-$(cut -d. -f1,2 <<< "$version")"
+# the toolchain id of the environment contract (TOOLCHAIN), a build argument besides the versions
+build_args+=$'\n'"TOOLCHAIN=linux-$vendor-$(cut -d. -f1,2 <<< "$version")"
 [[ $flavour == full ]] || tag="$tag-$flavour"
 
 case ${1:-} in
