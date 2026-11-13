@@ -5,7 +5,8 @@
 #   scripts/wsl-versions.sh           table of pinned vs WSL, exit 1 on any drift or missing component
 #   scripts/wsl-versions.sh --write   rewrite versions.env with the WSL versions (HDF5_COMMIT is kept), then exit 0
 #
-# Environment: ADAM_DIR (default ~/fortran/adam), whose lib/hdf5/develop/gnu/<GCC> build gives the HDF5 version.
+# Environment: ADAM_DIR (default ~/fortran/adam), whose lib/hdf5/develop/gnu/<GCC> build gives the HDF5 version and
+# whose exe/.regression-venv gives numpy and h5py.
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -42,6 +43,10 @@ wsl[SHELLCHECK]=$(version_of shellcheck --version)
 wsl[ZSH]=$(version_of zsh --version)
 wsl[FISH]=$(version_of fish --version)
 wsl[PWSH]=$(version_of pwsh --version)
+# the regression oracles' Python packages, as ADAM's regression venv has them
+venv_py=$adam/exe/.regression-venv/bin/python
+wsl[NUMPY]=$(version_of "$venv_py" -c 'import numpy; print(numpy.__version__)')
+wsl[H5PY]=$(version_of "$venv_py" -c 'import h5py; print(h5py.__version__)')
 
 keys=$(grep -oE '^[A-Z0-9_]+=' "$pins" | tr -d =)
 

@@ -1,0 +1,4 @@
+# the build context is the repository root (shared files under common/): send only what the Dockerfiles copy
+*
+!common/
+!gnu/

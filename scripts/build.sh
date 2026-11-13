@@ -2,7 +2,7 @@
 # Build a toolchain image locally, or print what the Build workflow needs to build it. The versions come from
 # versions.env (the build arguments of every Dockerfile), the tag from the vendor, its version and the flavour:
 #
-#   scripts/build.sh gnu full [docker build options]   docker build -t <tag> --target full ... gnu
+#   scripts/build.sh gnu full [docker build options]   docker build -t <tag> --target full -f gnu/Dockerfile ... .
 #   scripts/build.sh gnu full --tag                      the image tag, e.g. ghcr.io/szaghi/fortran-toolchains:gnu-16.2
 #   scripts/build.sh gnu full --build-args               the build arguments, one KEY=VALUE per line
 #
@@ -40,4 +40,4 @@ esac
 args=()
 while IFS= read -r kv; do args+=(--build-arg "$kv"); done <<< "$build_args"
 set -x
-docker build --target "$flavour" "${args[@]}" -t "$tag" "$@" "$root/$vendor"
+docker build --target "$flavour" "${args[@]}" -t "$tag" -f "$root/$vendor/Dockerfile" "$@" "$root"

@@ -9,7 +9,7 @@ name: Build
 on:
   push:
     branches: [main]
-    paths: ['gnu/**', 'versions.env', 'scripts/build.sh', '.github/workflows/build.yml']
+    paths: ['gnu/**', 'common/**', 'versions.env', 'scripts/build.sh', '.dockerignore', '.github/workflows/build.yml']
   workflow_dispatch:
 
 permissions:
@@ -62,7 +62,8 @@ jobs:
     - name: Build, check and push
       uses: docker/build-push-action@v6
       with:
-        context: ${{ matrix.vendor }}
+        context: .
+        file: ${{ matrix.vendor }}/Dockerfile
         target: ${{ matrix.flavour }}
         push: true
         tags: |
