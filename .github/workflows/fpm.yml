@@ -1,0 +1,113 @@
+name: fpm
+
+# Reusable: the project built and tested by fpm in a toolchain image, with that toolchain's compilers (FPM_FC, FPM_CC,
+# FPM_CXX from the environment contract's FC, CC, CXX, unless the project sets them):
+#
+#   jobs:
+#     fpm:
+#       uses: szaghi/fortran-toolchains/.github/workflows/fpm.yml@v1
+
+on:
+  workflow_call:
+    inputs:
+      toolchain:
+        description: a Linux toolchain id (linux-gnu, linux-nvhpc, linux-oneapi)
+        type: string
+        default: linux-gnu
+      test-command:
+        description: the tests, run with bash from working-directory (empty to skip)
+        type: string
+        default: fpm test
+      build-command:
+        description: the build, run with bash from working-directory (empty to skip)
+        type: string
+        default: fpm build --profile release
+      working-directory:
+        description: the project's directory in the repository
+        type: string
+        default: .
+      apt-packages:
+        description: Debian packages installed in the image first
+        type: string
+        default: ''
+      toolchains-ref:
+        description: the ref of this repository whose scripts are used; empty for the caller's checkout
+        type: string
+        default: v1
+      toolchains-repository:
+        description: this repository
+        type: string
+        default: szaghi/fortran-toolchains
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      image: ${{ steps.plan.outputs.image }}
+    steps:
+    - name: Checkout the caller
+      if: inputs.toolchains-ref == ''
+      uses: actions/checkout@v7
+
+    - name: Checkout fortran-toolchains
+      if: inputs.toolchains-ref != ''
+      uses: actions/checkout@v7
+      with:
+        repository: ${{ inputs.toolchains-repository }}
+        ref: ${{ inputs.toolchains-ref }}
+
+    - name: Image
+      id: plan
+      env:
+        REGISTRY: ghcr.io/${{ inputs.toolchains-repository }}
+        TOOLCHAIN: ${{ inputs.toolchain }}
+      run: |
+        image=$(scripts/plan.sh "$TOOLCHAIN" | sed -n 's/^linux=//p' | jq -r '.[0].image // empty')
+        [ -n "$image" ] || { echo "::error::$TOOLCHAIN is not a Linux toolchain"; exit 1; }
+        echo "image=$image" | tee -a "$GITHUB_OUTPUT"
+
+  fpm:
+    name: fpm (${{ inputs.toolchain }})
+    needs: plan
+    runs-on: ubuntu-24.04
+    container: ${{ needs.plan.outputs.image }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v7
+
+    - name: Packages
+      if: inputs.apt-packages != ''
+      env:
+        PACKAGES: ${{ inputs.apt-packages }}
+      # PACKAGES is a word list
+      run: |
+        # shellcheck disable=SC2086
+        apt-get update -qq && apt-get install -y -qq --no-install-recommends $PACKAGES
+
+    - name: The toolchain's compilers for fpm
+      run: |
+        {
+          echo "FPM_FC=${FPM_FC:-$FC}"
+          echo "FPM_CC=${FPM_CC:-$CC}"
+          echo "FPM_CXX=${FPM_CXX:-$CXX}"
+        } | tee -a "$GITHUB_ENV"
+        fpm --version | head -1
+
+    - name: Tests
+      if: inputs.test-command != ''
+      env:
+        COMMAND: ${{ inputs.test-command }}
+      run: bash -c "$COMMAND"
+
+    - name: Build
+      if: inputs.build-command != ''
+      env:
+        COMMAND: ${{ inputs.build-command }}
+      run: bash -c "$COMMAND"

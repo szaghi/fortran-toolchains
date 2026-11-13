@@ -67,3 +67,16 @@ jobs:
       paths: docs/examples
       working-directory: tests/fixture
       toolchains-ref: ''
+
+  fpm:
+    uses: ./.github/workflows/fpm.yml
+    with:
+      working-directory: tests/fixture
+      toolchains-ref: ''
+
+  fpm-oneapi:
+    uses: ./.github/workflows/fpm.yml
+    with:
+      toolchain: linux-oneapi
+      working-directory: tests/fixture
+      toolchains-ref: ''
