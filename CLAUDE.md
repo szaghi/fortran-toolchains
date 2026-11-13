@@ -6,16 +6,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Container images of the Fortran toolchains that the projects under `~/fortran/` use in CI and to reproduce CI locally.
 Each image is **one compiler plus the MPI and HDF5 built by that compiler**, so every `.mod` (`mpi_f08`, `hdf5`) is
-readable by the image's compiler. One Dockerfile per vendor (`gnu/` today: gfortran 16.2.0, Open MPI 5.0.11, HDF5
-develop `ab5df552` = 2.3.0), three flavours, published as `ghcr.io/szaghi/fortran-toolchains:<vendor>-<major.minor>`
+readable by the image's compiler. One Dockerfile per vendor: `gnu/` (gfortran 16.2.0, Open MPI 5.0.11), `nvhpc/`
+(nvfortran 26.9, HPC-X, CUDA 13.3), `oneapi/` (ifx 2026.2.0, Intel MPI 2021.19.0), each with HDF5 develop `ab5df552`
+(2.3.0) built by its compiler; three flavours, published as `ghcr.io/szaghi/fortran-toolchains:<vendor>-<major.minor>`
 (`full`), `…-lite`, `…-gui`, each also tagged `<tag>-YYYYMMDD`. Where it is going (more vendors, macOS/Windows setups,
 reusable workflows, a thin FoBiS scaffold): `ROADMAP.md`, tracked in issue #2.
 
 ## Commands
 
 ```bash
-# build an image (versions from versions.env; ~5 min cold on 16 cores, ~30 on a hosted runner)
+# build an image (versions from versions.env; gnu ~5 min cold on 16 cores; nvhpc downloads 5 GB)
 scripts/build.sh gnu full --build-arg JOBS=16      # :gnu-16.2      (lite, gui: :gnu-16.2-lite, :gnu-16.2-gui)
+scripts/build.sh nvhpc full                        # :nvhpc-26.9    (oneapi full: :oneapi-2026.2)
 REGISTRY=local scripts/build.sh gnu lite           # tag local:gnu-16.2-lite instead of ghcr.io/...
 scripts/build.sh gnu full --tag                    # the tag; --build-args: the KEY=VALUE build arguments
 
@@ -41,23 +43,31 @@ never in the project's own tree: the container writes as root).
 
 ## Architecture
 
-- **`gnu/Dockerfile` stages.** `cmake` (the pinned CMake release) and `tools` (ninja, Node, fpm, ShellCheck, fish,
-  PowerShell: upstream release binaries, checksums verified where published) are download stages. `build` compiles
-  Open MPI (Fortran bindings, internal PMIx/hwloc/libevent) into `/opt/openmpi`, then HDF5 with the pinned CMake and
-  `mpicc`/`mpif90` into `/opt/hdf5` (parallel, Fortran, HL, **static only**, `-fPIC`, deflate on, szip off). CMake is
-  copied in after Open MPI, so a tool bump never rebuilds Open MPI. The public stages are the flavours: `lite` (gcc
-  base + Debian basics + the tools + the venv `/opt/venv`, pinned pip packages), `full` (`lite` + MPI, HDF5, FFTW,
-  LZ4, LZMA), `gui` (`full` + X11/Wayland headers, Xvfb, Mesa).
+- **Shared recipes in `common/`, vendor specifics in the Dockerfiles.** `install-tools.sh` (CMake; ninja, Node, fpm,
+  ShellCheck, fish, PowerShell: upstream release binaries, checksums where published), `install-base.sh` (distribution
+  packages per flavour, Debian or Ubuntu; the system `safe.directory`), `install-venv.sh` (pinned FoBiS, ford, formal,
+  numpy, h5py), `build-hdf5.sh <mpicc> <mpifort>` (HDF5 parallel, Fortran, HL, **static only**, `-fPIC`, deflate on,
+  szip off), `check-versions.sh`, `check-image.sh`, `check.f90`. A Dockerfile has download stages (`cmake` alone, so
+  a tool bump never rebuilds HDF5; `tools`), a compiler stage, a `build` stage (HDF5, and in `gnu` Open MPI first),
+  and the public flavours: `lite` (compiler + tools + venv), `full` (+ MPI development, HDF5, FFTW, LZ4, LZMA), `gui`
+  (+ X11/Wayland headers, Xvfb, Mesa).
+- **Bases.** `gnu` builds on the official `gcc:<ver>` (Debian) and compiles Open MPI. `nvhpc` and `oneapi` build on
+  `ubuntu:$UBUNTU` (the WSL box's distribution) and install the SDK from the vendor's apt repository at the exact WSL
+  version (`apt-cache madison` resolves `<ver>-<build>`: a bare package name would take a newer patch release). The
+  SDK environment their `vars.sh`/modulefile would set is written as `ENV` (no CI step sources anything). `nvhpc`'s SDK
+  is trimmed in its install layer (15 → 7.6 GB: profilers, examples, NCCL, NVSHMEM, CUDA `compat`, `*_static.a` math
+  libraries); its apt package also pulls Ubuntu's gfortran 13 (a dependency), which the image does not use.
 - **Versions are build arguments, from `versions.env` only.** `scripts/build.sh` passes them (locally and in CI); no
   ARG has a default, so a build without them fails instead of using a stale version. The build context is the repository
-  root (`.dockerignore` sends only `common/` and the vendor directories).
+  root (`.dockerignore` sends only `common/`: the Dockerfiles copy nothing else; `-f <vendor>/Dockerfile`).
 - **The checks are `RUN`s in the Dockerfile**, not CI steps: `common/check-versions.sh` (every component at its pin) in
-  every flavour; `check.f90` on 2 ranks (a collective parallel-HDF5 write, the deflate filter) and the LZ4/LZMA link in
-  `full`; Xvfb + `glxinfo` showing llvmpipe in `gui`; `git` on a repo owned by uid 1001. A failing check fails the
+  every flavour; `common/check-image.sh`: `check.f90` built by the image's MPI Fortran wrapper (`mpifort`, `mpiifx`)
+  and run on 2 ranks (a collective parallel-HDF5 write, the deflate filter) and the LZ4/LZMA link in `full`; Xvfb + `glxinfo` showing llvmpipe in `gui`; `git` on a repo owned by uid 1001. A failing check fails the
   build, so `build-push-action` never pushes a broken image.
 - **CI (`.github/workflows/build.yml`)** builds and pushes one job per (vendor, flavour) on push to `main` (filtered by
-  `paths`) or by `workflow_dispatch`, with the GHA layer cache scoped per (vendor, flavour). `REGISTRY` comes from
-  `github.repository`.
+  `paths`) or by `workflow_dispatch`. The layer cache is in the registry (`cache-<vendor>-<flavour>` tags): the GHA
+  cache's 10 GB per repository cannot hold the NVIDIA SDK layer beside the others. `nvhpc` jobs free the runner's disk
+  first. `REGISTRY` comes from `github.repository`.
 
 ## The consumer contract
 
@@ -91,14 +101,16 @@ Environment that consumers rely on: `PATH` (venv, `/opt/tools/bin`, `/opt/cmake/
   the only intended difference is HDF5's deflate filter.
 - A new pin: a line in `versions.env`, a probe in `scripts/wsl-versions.sh` and in `common/check-versions.sh`, an `ARG`
   in the stage that uses it, its name in that flavour's `check-versions.sh` call.
-- A new vendor: a directory with its `Dockerfile` and checks, a version rule in `scripts/build.sh` (`case $vendor`),
-  and an entry in the `matrix.vendor` **and** the `paths` filter of `build.yml` (without it a push to the directory
-  does not trigger a build).
+- A new vendor: a directory with its `Dockerfile` (reusing `common/`), a version rule in `scripts/build.sh`
+  (`case $vendor`: the version its tag carries), and an entry in the `matrix.vendor` **and** the `paths` filter of
+  `build.yml` (without it a push to the directory does not trigger a build).
 - Any change to `build.yml`, `versions.env`, `common/` or `scripts/build.sh` rebuilds every image in the matrix.
 - Projects move to a new toolchain by changing `toolchain_image` in each `fobos`, then `fobis scaffold sync`.
 
 ## Gotchas
 
+- **Never edit a script while a background job runs it**: bash reads scripts incrementally, and the running process
+  resumes at its old byte offset in the new file (a `syntax error near unexpected token` that is not in the file).
 - **Tags are mutable.** All consumers track the floating `:gnu-16.2`, so a push reaches every project's next CI run.
   A second build on the same day overwrites the date tag.
 - **Upstream checksum files are not uniform**: PowerShell's `hashes.sha256` is UTF-16LE with CRLF (`iconv` first);

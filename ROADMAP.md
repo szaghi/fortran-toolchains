@@ -38,9 +38,9 @@ tags. Each image: the compiler, its MPI, HDF5 2.3.0 built by that compiler, the 
 | Tag | Contents | Status |
 |---|---|---|
 | `gnu-16.2` (+ `-lite`, `-gui`) | gfortran 16.2.0, Open MPI 5.0.11, HDF5 2.3.0, FFTW 3, LZ4, LZMA | done (Phase 1): `gnu/Dockerfile`, flavours `lite`/`full`/`gui` |
-| `nvhpc-26.9` | nvfortran 26.9, HPC-X, CUDA 13.3, HDF5 2.3.0 (recipe: ADAM's `nvf/26.9` build) | new; the SDK is 15 GB installed against ~14 GB free on a hosted runner: trim it (one CUDA, no NCCL/NVSHMEM) and free disk in the jobs. Compile-only on hosted runners. |
-| `oneapi-2026.2` | ifx 2026.2.0, Intel MPI 2021.19, HDF5 2.3.0 (new recipe) | new; ifx and MPI from Intel's apt repository, not the hpckit image |
-| `<vendor>-<ver>-gui` | + SDL/X11/Wayland headers, Xvfb, Mesa (llvmpipe) | done for gnu; nvhpc and oneapi with their images (figure's display tests run on all three) |
+| `nvhpc-26.9` (+ `-lite`, `-gui`) | nvfortran 26.9, HPC-X (Open MPI 5.0), CUDA 13.3, HDF5 2.3.0 (ADAM's `nvf/26.9` recipe) | done (Phase 2): Ubuntu 24.04 + NVIDIA's apt package at the exact version, trimmed 15 → 7.6 GB (profilers, examples, NCCL, NVSHMEM, CUDA `compat`, static math libraries); 3.9 GB compressed. Compile and CPU runs on hosted runners. |
+| `oneapi-2026.2` (+ `-lite`, `-gui`) | ifx 2026.2.0, Intel MPI 2021.19.0, HDF5 2.3.0 (built by `mpicc`/`mpiifx`) | done (Phase 2): Ubuntu 24.04 + Intel's apt packages at the exact versions (not the hpckit image); 1.7 GB compressed |
+| `<vendor>-<ver>-gui` | + SDL/X11/Wayland headers, Xvfb, Mesa (llvmpipe) | done for the three vendors |
 
 **Shared tool layer** (done in `gnu`, Phase 1), every tool at its `versions.env` pin: CMake, ninja, Node + npm
 (drops `setup-node` and the EOL Node 20), fpm, ShellCheck, fish, PowerShell as upstream release binaries; zsh from

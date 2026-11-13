@@ -1,6 +1,6 @@
 name: Build
 
-# Builds the toolchain images and pushes them to GHCR. One job per (vendor, flavour): scripts/build.sh gives the tag
+# Builds the toolchain images and pushes them to GHCR. One job per (vendor, flavour: gnu, nvhpc, oneapi × lite, full, gui): scripts/build.sh gives the tag
 # (<vendor>-<major.minor> for the full flavour, <vendor>-<major.minor>-<flavour> for the others) and the build
 # arguments (versions.env, the versions installed on the WSL box). Each image is also tagged <tag>-<date> so a project
 # can pin a build. Built when a vendor directory, versions.env, scripts/build.sh or this workflow changes on main, or
@@ -9,7 +9,8 @@ name: Build
 on:
   push:
     branches: [main]
-    paths: ['gnu/**', 'common/**', 'versions.env', 'scripts/build.sh', '.dockerignore', '.github/workflows/build.yml']
+    paths: ['gnu/**', 'nvhpc/**', 'oneapi/**', 'common/**', 'versions.env', 'scripts/build.sh', '.dockerignore',
+            '.github/workflows/build.yml']
   workflow_dispatch:
 
 permissions:
@@ -27,7 +28,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        vendor: [gnu]
+        vendor: [gnu, nvhpc, oneapi]
         flavour: [lite, full, gui]
 
     steps:
@@ -48,6 +49,16 @@ jobs:
           echo 'JOBS=4'
           echo 'EOF'
         } >> "$GITHUB_OUTPUT"
+
+    # the NVIDIA HPC SDK is 15 GB installed (trimmed to ~7 GB in the same layer): the runner's preinstalled toolchains
+    # leave too little disk for it
+    - name: Free disk space
+      if: matrix.vendor == 'nvhpc'
+      run: |
+        df -h /
+        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+        sudo docker image prune --all --force > /dev/null
+        df -h /
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
@@ -70,5 +81,7 @@ jobs:
           ${{ steps.image.outputs.tag }}
           ${{ steps.image.outputs.dated }}
         build-args: ${{ steps.image.outputs.build-args }}
-        cache-from: type=gha,scope=${{ matrix.vendor }}-${{ matrix.flavour }}
-        cache-to: type=gha,mode=max,scope=${{ matrix.vendor }}-${{ matrix.flavour }}
+        # the layer cache lives in the registry (cache-<vendor>-<flavour> tags): the GHA cache's 10 GB per repository
+        # cannot hold the NVIDIA SDK's layer beside the others
+        cache-from: type=registry,ref=ghcr.io/${{ github.repository }}:cache-${{ matrix.vendor }}-${{ matrix.flavour }}
+        cache-to: type=registry,ref=ghcr.io/${{ github.repository }}:cache-${{ matrix.vendor }}-${{ matrix.flavour }},mode=max
