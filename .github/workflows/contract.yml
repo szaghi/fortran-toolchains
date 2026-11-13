@@ -1,0 +1,92 @@
+name: Contract
+
+# Every toolchain exports the same environment (common/check-contract.sh: FC CC CXX TOOLCHAIN TOOLCHAIN_OS
+# TOOLCHAIN_FAMILY, MPIFC MPIRUN HDF5_ROOT with MPI, and the tools), so the reusable workflows run one project script
+# on any of them. This checks it where the projects will meet it: in each published image as a job container, and on
+# the runners without an image through the setup actions of this repository (macOS, Windows, a fresh Linux runner),
+# whose own last step checks the contract and the versions (versions drifting within their major warn there).
+# The image tags come from scripts/build.sh and versions.env, never from this file.
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/actions/**', 'common/**', 'versions.env', 'scripts/build.sh', '.github/workflows/contract.yml']
+  workflow_run:
+    workflows: [Build]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    outputs:
+      images: ${{ steps.images.outputs.images }}
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v5
+
+    - name: The published images (one per vendor directory, full flavour)
+      id: images
+      env:
+        REGISTRY: ghcr.io/${{ github.repository }}
+      run: |
+        images=$(for d in */Dockerfile; do scripts/build.sh "${d%/Dockerfile}" full --tag; done | jq -Rnc '[inputs]')
+        echo "images=$images" >> "$GITHUB_OUTPUT"
+        echo "$images"
+
+  image:
+    name: ${{ matrix.image }}
+    needs: plan
+    runs-on: ubuntu-24.04
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJSON(needs.plan.outputs.images) }}
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v5
+
+    - name: Contract
+      run: common/check-contract.sh --mpi
+
+  macos:
+    needs: plan
+    runs-on: macos-15
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v5
+
+    - name: Set up the toolchain (checks the contract)
+      uses: ./.github/actions/setup-macos
+      with:
+        flavour: full
+
+  windows:
+    needs: plan
+    runs-on: windows-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v5
+
+    - name: Set up the toolchain (checks the contract)
+      uses: ./.github/actions/setup-windows
+
+  linux-bare:
+    needs: plan
+    runs-on: ubuntu-24.04
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v5
+
+    - name: Set up the toolchain (checks the contract)
+      uses: ./.github/actions/setup-linux-bare
