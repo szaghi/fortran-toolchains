@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Tests of check-versions.sh with stub tools on PATH (no real toolchain needed). Portable to bash 3.2: run it with the
-# shell to test, e.g. `bash common/test-check-versions.sh` and, for macOS's bash,
-# `docker run --rm -v "$PWD:/r" -w /r bash:3.2 bash common/test-check-versions.sh`.
+# shell to test, e.g. `bash tests/check-versions.sh` and, for macOS's bash,
+# `docker run --rm -v "$PWD:/r" -w /r bash:3.2 bash tests/check-versions.sh`.
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
-cv="$here/check-versions.sh"
+cv="$here/../common/check-versions.sh"
 stubs=$(mktemp -d 2>/dev/null || mktemp -d -t stubs)
 trap 'rm -rf "$stubs"' EXIT
 printf '#!/bin/sh\necho "Version:     0.13.0, alpha"\n' > "$stubs/fpm"

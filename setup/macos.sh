@@ -2,12 +2,12 @@
 # The macos-gnu toolchain on a GitHub macOS runner (arm64), called by .github/actions/setup-macos in phases (the action
 # restores the HDF5 cache between them). Portable to bash 3.2 (macOS's /bin/bash).
 #
-#   setup-macos.sh tools lite|full [brew packages...]
+#   macos.sh tools lite|full [brew packages...]
 #       Homebrew: gcc (the WSL major of the GCC pin), fpm, ninja, pkg-config, open-mpi (full), the extra packages;
 #       CMake: Kitware's release binary at its pin; FoBiS pinned in a venv. Exports the environment contract (FC = the
 #       Homebrew gfortran-<major>, CC/CXX = Apple clang) and prints the installed gfortran and Open MPI versions as step
 #       outputs (gfortran=, openmpi=) for the HDF5 cache key.
-#   setup-macos.sh hdf5
+#   macos.sh hdf5
 #       HDF5 at the pinned commit, built by Open MPI's wrappers (mpifort on the contract's gfortran) into
 #       $HOME/.fortran-toolchains/hdf5 unless the cache restored it; exports MPIFC, MPIRUN, HDF5_ROOT.
 #
@@ -35,10 +35,10 @@ output() {
 gcc_major=$(pin GCC); gcc_major=${gcc_major%%.*}
 fc=gfortran-$gcc_major
 
-case ${1:?usage: setup-macos.sh tools lite|full [packages...] | hdf5} in
+case ${1:?usage: macos.sh tools lite|full [packages...] | hdf5} in
   tools)
-    flavour=${2:?usage: setup-macos.sh tools lite|full [packages...]}; shift 2
-    case $flavour in lite|full) ;; *) echo "setup-macos.sh: flavour '$flavour' is not lite or full" >&2; exit 2 ;; esac
+    flavour=${2:?usage: macos.sh tools lite|full [packages...]}; shift 2
+    case $flavour in lite|full) ;; *) echo "macos.sh: flavour '$flavour' is not lite or full" >&2; exit 2 ;; esac
     pkgs="gcc fpm ninja pkg-config"
     [ "$flavour" = full ] && pkgs="$pkgs open-mpi"
     export HOMEBREW_NO_INSTALL_CLEANUP=1 HOMEBREW_NO_ENV_HINTS=1
@@ -87,5 +87,5 @@ case ${1:?usage: setup-macos.sh tools lite|full [packages...] | hdf5} in
     setenv HDF5_ROOT "$home/hdf5"
     addpath "$home/hdf5/bin"
     ;;
-  *) echo "setup-macos.sh: unknown phase $1" >&2; exit 2 ;;
+  *) echo "macos.sh: unknown phase $1" >&2; exit 2 ;;
 esac

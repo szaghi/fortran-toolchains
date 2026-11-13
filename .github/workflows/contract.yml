@@ -10,7 +10,8 @@ name: Contract
 on:
   push:
     branches: [main]
-    paths: ['.github/actions/**', 'common/**', 'versions.env', 'scripts/build.sh', '.github/workflows/contract.yml']
+    paths: ['.github/actions/**', 'common/**', 'setup/**', 'versions.env', 'scripts/build.sh',
+            '.github/workflows/contract.yml']
   workflow_run:
     workflows: [Build]
     types: [completed]

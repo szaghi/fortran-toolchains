@@ -25,7 +25,7 @@ runs:
     # PACKAGES is a space-separated list of package names
     run: |
       # shellcheck disable=SC2086
-      "$GITHUB_ACTION_PATH/../../../common/setup-macos.sh" tools "$FLAVOUR" $PACKAGES
+      "$GITHUB_ACTION_PATH/../../../setup/macos.sh" tools "$FLAVOUR" $PACKAGES
       echo "hdf5=$(sed -n 's/^HDF5_COMMIT=//p' "$GITHUB_ACTION_PATH/../../../versions.env")" >> "$GITHUB_OUTPUT"
 
   - name: HDF5 cache
@@ -38,7 +38,7 @@ runs:
   - name: HDF5
     if: inputs.flavour == 'full'
     shell: bash
-    run: '"$GITHUB_ACTION_PATH/../../../common/setup-macos.sh" hdf5'
+    run: '"$GITHUB_ACTION_PATH/../../../setup/macos.sh" hdf5'
 
   - name: Check the contract and the versions
     shell: bash

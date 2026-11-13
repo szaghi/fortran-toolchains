@@ -12,7 +12,7 @@ runs:
   - name: Toolchain PPA
     id: repo
     shell: bash
-    run: '"$GITHUB_ACTION_PATH/../../../common/setup-linux-bare.sh" repo'
+    run: '"$GITHUB_ACTION_PATH/../../../setup/linux-bare.sh" repo'
 
   - name: Compiler packages cache
     uses: actions/cache@v6
@@ -22,7 +22,7 @@ runs:
 
   - name: Compiler and tools
     shell: bash
-    run: '"$GITHUB_ACTION_PATH/../../../common/setup-linux-bare.sh" install'
+    run: '"$GITHUB_ACTION_PATH/../../../setup/linux-bare.sh" install'
 
   - name: Check the contract and the versions
     shell: bash

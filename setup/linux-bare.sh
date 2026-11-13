@@ -5,9 +5,9 @@
 # FoBiS pinned in a venv. Root or sudo. Called by .github/actions/setup-linux-bare in two phases, the action
 # restoring the cache of the compiler's packages between them (388 MB from the PPA for gcc 16, minutes to download):
 #
-#   setup-linux-bare.sh repo       the PPA added; prints the compiler's PPA version as a step output (gcc=) for the
+#   linux-bare.sh repo       the PPA added; prints the compiler's PPA version as a step output (gcc=) for the
 #                                  cache key
-#   setup-linux-bare.sh install    the compiler, apt's archives in $FORTRAN_TOOLCHAINS_HOME/debs (the cached directory:
+#   linux-bare.sh install    the compiler, apt's archives in $FORTRAN_TOOLCHAINS_HOME/debs (the cached directory:
 #                                  restored packages are not downloaded again), the tools; exports the contract
 #
 # Writes to $GITHUB_ENV, $GITHUB_PATH and $GITHUB_OUTPUT inside a job; prints `export` lines otherwise.
@@ -34,7 +34,7 @@ major=$(pin GCC); major=${major%%.*}
 compilers="gcc-$major g++-$major gfortran-$major"
 export DEBIAN_FRONTEND=noninteractive
 
-case ${1:?usage: setup-linux-bare.sh repo|install} in
+case ${1:?usage: linux-bare.sh repo|install} in
   repo)
     $sudo apt-get update -qq
     $sudo apt-get install -y -qq --no-install-recommends software-properties-common gpg-agent ca-certificates curl \
@@ -65,5 +65,5 @@ case ${1:?usage: setup-linux-bare.sh repo|install} in
     setenv TOOLCHAIN_OS linux
     setenv TOOLCHAIN_FAMILY gnu
     ;;
-  *) echo "setup-linux-bare.sh: unknown phase $1" >&2; exit 2 ;;
+  *) echo "linux-bare.sh: unknown phase $1" >&2; exit 2 ;;
 esac

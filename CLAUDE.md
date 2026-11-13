@@ -32,8 +32,8 @@ docker run --rm -e FPM=0.13.0 ghcr.io/szaghi/fortran-toolchains:gnu-16.2 /opt/to
 
 # the environment contract in an image; the drift-policy tests, under bash 5 and macOS's bash 3.2
 docker run --rm -v "$PWD:/repo:ro" -w /repo ghcr.io/szaghi/fortran-toolchains:gnu-16.2 common/check-contract.sh --mpi
-bash common/test-check-versions.sh
-docker run --rm -v "$PWD:/r" -w /r bash:3.2 bash common/test-check-versions.sh
+bash tests/check-versions.sh
+docker run --rm -v "$PWD:/r" -w /r bash:3.2 bash tests/check-versions.sh
 
 # reproduce a project's CI failure inside the image
 docker run --rm -it -v $PWD:/work -w /work ghcr.io/szaghi/fortran-toolchains:gnu-16.2 bash
@@ -74,8 +74,8 @@ never in the project's own tree: the container writes as root).
   `PATH`. The images set it as `ENV` (`TOOLCHAIN` comes from `scripts/build.sh`, which owns the tag and id format) and
   check it at build time; the setup actions export it through `$GITHUB_ENV`/`$GITHUB_PATH` and check it last.
 - **Setup actions** (`.github/actions/setup-{macos,windows,linux-bare}`, for runners that cannot run a container):
-  thin composite actions over `common/setup-macos.sh` (phases `tools` and `hdf5`, the HDF5 cache restored between
-  them, keyed on the gfortran and Open MPI versions actually installed) and `common/setup-linux-bare.sh`; Windows is
+  thin composite actions over `setup/macos.sh` (phases `tools` and `hdf5`, the HDF5 cache restored between
+  them, keyed on the gfortran and Open MPI versions actually installed) and `setup/linux-bare.sh`; Windows is
   inline MSYS2. They read `versions.env` from `$GITHUB_ACTION_PATH/../../..` and check versions with
   `check-versions.sh --policy major`: Homebrew, MSYS2 and the PPA are rolling, so a same-major drift warns, another
   major fails. The images use the default `exact` policy.
@@ -131,9 +131,9 @@ Environment that consumers rely on: `PATH` (venv, `/opt/tools/bin`, `/opt/cmake/
 - **Scripts a setup action runs must work in bash 3.2 and MSYS2** (macOS's `/bin/bash`; Windows): no associative
   arrays, `${var,,}`, `find -printf`, `readarray`; `shasum -a 256` on macOS (no `sha256sum`); `cygpath -u` turns the
   Windows `$GITHUB_ACTION_PATH` into a path MSYS2's bash reads. Test with `docker run bash:3.2`.
-- The macOS and Windows setups cannot be run locally: `common/setup-macos.sh` can be driven on Linux with a stub `brew`
+- The macOS and Windows setups cannot be run locally: `setup/macos.sh` can be driven on Linux with a stub `brew`
   and `gfortran-16` pointing at a real gfortran (WSL's gcc 16.2 and Open MPI 5.0.11 stand in for Homebrew's), and
-  `common/setup-linux-bare.sh` runs as-is in a plain `ubuntu:24.04` container.
+  `setup/linux-bare.sh` runs as-is in a plain `ubuntu:24.04` container.
 - Editing `common/install-tools.sh` invalidates the `cmake` stage, hence every HDF5 build (a few minutes per vendor).
 
 - **Never edit a script while a background job runs it**: bash reads scripts incrementally, and the running process
