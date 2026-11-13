@@ -1,7 +1,8 @@
 name: Selftest
 
 # The reusable workflows of this repository, called on tests/fixture with this commit's actions and scripts
-# (toolchains-ref: '' uses this checkout), on every toolchain they support. A reusable workflow cannot be tested before
+# (toolchains-ref: '' uses this checkout), on every toolchain they support; matrix-v1 takes the released path instead
+# (the default toolchains-ref, v1), as the projects do. A reusable workflow cannot be tested before
 # it is pushed: this is its gate, and the projects' callers pin a release tag (v1) once it is green.
 
 on:
@@ -26,6 +27,14 @@ jobs:
       toolchains: linux-gnu linux-nvhpc linux-oneapi macos-gnu windows-gnu
       working-directory: tests/fixture
       toolchains-ref: ''
+
+  # the released path every project takes: toolchains-ref left at its default (v1), so the workflow checks this
+  # repository out at v1 and sets the macOS and Windows toolchains up from that checkout
+  matrix-v1:
+    uses: ./.github/workflows/matrix.yml
+    with:
+      toolchains: linux-gnu macos-gnu windows-gnu
+      working-directory: tests/fixture
 
   matrix-display:
     uses: ./.github/workflows/matrix.yml
