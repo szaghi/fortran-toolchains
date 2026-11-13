@@ -83,11 +83,14 @@ jobs:
       working-directory: tests/fixture
       toolchains-ref: ''
 
-  # the coverage run by the docs job itself, no deployment
+  # the coverage run by the docs job itself, no deployment; the Pages permissions all the same: GitHub checks what a
+  # called workflow's jobs request against the grant before any if (deploy's), and fails the whole run at startup
   docs-run:
     permissions:
       contents: read
       actions: read
+      pages: write
+      id-token: write
     uses: ./.github/workflows/docs.yml
     with:
       coverage: run

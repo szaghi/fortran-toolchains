@@ -146,8 +146,9 @@ jobs:
       tag: ${{ github.ref_name }}
 ```
 
-A called workflow gets at most the permissions its caller grants: `docs` needs the four above, `release`
-`contents: write`. The install job is the caller's because a release published with `GITHUB_TOKEN` starts no workflow.
+A called workflow gets at most the permissions its caller grants, and GitHub checks every job's request at startup,
+before any `if`: `docs` needs the four above even with `deploy: false`, `release` `contents: write` even with
+`dry-run`; a smaller grant fails the whole run before it starts. The install job is the caller's because a release published with `GITHUB_TOKEN` starts no workflow.
 
 | Workflow | What it does | Main inputs |
 |---|---|---|

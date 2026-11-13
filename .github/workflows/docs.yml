@@ -8,7 +8,7 @@ name: Docs
 #       workflows: [CI]
 #       types: [completed]
 #     workflow_dispatch:
-#   permissions:
+#   permissions:          # all four, even with deploy: false (GitHub checks the deploy job's request at startup)
 #     contents: read
 #     actions: read     # the coverage-docs artifact of the CI run
 #     pages: write
@@ -254,7 +254,7 @@ jobs:
     permissions:
       pages: write
       id-token: write
-    # one deployment at a time, none cancelled half-way
+    # one deployment at a time: a newer one waits (a caller's own cancel-in-progress can still cancel this one)
     concurrency:
       group: pages-${{ github.repository }}
       cancel-in-progress: false

@@ -104,7 +104,9 @@ never in the project's own tree: the container writes as root).
 - **docs, release, install** keep the scaffold's split: `docs` runs on the caller's `workflow_run` of CI and takes the
   coverage from test's `coverage-docs` artifact; `install` is a second job of the caller's release workflow (a release
   published with `GITHUB_TOKEN` starts no workflow). A called workflow gets at most the permissions its caller grants
-  (`docs`: contents/actions read, pages/id-token write; `release`: contents write), else the run fails at startup.
+  (`docs`: contents/actions read, pages/id-token write; `release`: contents write), checked before any `if`, so even a
+  `deploy: false` or `dry-run` call needs them, else the whole run fails at startup. act and actionlint do not model
+  this check.
 - **Release**: `v1` is a moving major tag; `scripts/release.sh X.Y.Z` tags and moves it once Build, Contract and
   Selftest are green on HEAD. A breaking change of a workflow's inputs is a new major (`v2`) and a new default
   `toolchains-ref`.
