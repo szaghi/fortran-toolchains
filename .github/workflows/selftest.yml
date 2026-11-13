@@ -121,6 +121,44 @@ jobs:
           [ "$DEPLOYED" = false ]
         fi
 
+  # the fixture's v1.2.3 release, not published: the tarball, the notes and the installer as the release artifact (the
+  # caller grants what publishing needs, as a project's does)
+  release:
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: v1.2.3
+      name: fixture
+      dry-run: true
+      working-directory: tests/fixture
+      toolchains-ref: ''
+
+  release-check:
+    needs: release
+    runs-on: ubuntu-24.04
+    steps:
+    - name: The release artifact
+      uses: actions/download-artifact@v8
+      with:
+        name: release
+
+    - name: Check it
+      env:
+        TARBALL: ${{ needs.release.outputs.tarball }}
+      run: |
+        ls -l
+        [ "$TARBALL" = fixture-v1.2.3.tar.gz ]
+        tar -tzf "$TARBALL" > list
+        grep -qx 'fixture-v1.2.3/fobos' list
+        grep -qx 'fixture-v1.2.3/src/lib/fixture.F90' list
+        grep -qx 'fixture-v1.2.3/docs/package.json' list
+        if grep -vq '^fixture-v1.2.3/' list; then echo "an entry outside fixture-v1.2.3/"; exit 1; fi
+        [ -f install.sh ]
+        cat release-notes.md
+        head -1 release-notes.md | grep -q '^## \[1.2.3\]'
+        if grep -q '1.2.2' release-notes.md; then echo "the notes run into 1.2.2's section"; exit 1; fi
+
   generated:
     uses: ./.github/workflows/generated.yml
     with:

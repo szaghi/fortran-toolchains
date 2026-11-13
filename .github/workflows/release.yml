@@ -1,0 +1,161 @@
+name: Release
+
+# Reusable: a GitHub release of the pushed tag, with the source tarball, the tag's changelog section as its notes and
+# the assets (the FoBiS scaffold's installer by default):
+#
+#   on:
+#     push:
+#       tags: ['v[0-9]+.[0-9]+.[0-9]+']
+#   permissions:
+#     contents: write
+#   jobs:
+#     release:
+#       uses: szaghi/fortran-toolchains/.github/workflows/release.yml@v1
+#     install:
+#       needs: release
+#       uses: szaghi/fortran-toolchains/.github/workflows/install.yml@v1
+#       with:
+#         tag: ${{ github.ref_name }}
+#
+# The install job is the caller's: a release published with GITHUB_TOKEN starts no workflow, so `release: published`
+# never fires. A run on a branch (a dispatch) does nothing unless `dry-run`, which builds the tarball and the notes and
+# uploads them as the release artifact instead of publishing.
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: the release's tag (default the pushed tag); publishing requires the run's own tag
+        type: string
+        default: ''
+      name:
+        description: the release's name, and the tarball's (<name>-<tag>.tar.gz); default the repository's name
+        type: string
+        default: ''
+      assets:
+        description: files attached beside the tarball, relative to working-directory (whitespace-separated)
+        type: string
+        default: scripts/install.sh
+      excludes:
+        description: tar --exclude patterns of the tarball (whitespace-separated)
+        type: string
+        default: >-
+          .git docs/node_modules docs/.vitepress/dist docs/.vitepress/cache exe obj mod
+      changelog:
+        description: the changelog whose section of the tag is the notes, relative to working-directory
+        type: string
+        default: CHANGELOG.md
+      dry-run:
+        description: build the tarball and the notes, upload them as the release artifact, publish nothing
+        type: boolean
+        default: false
+      working-directory:
+        description: the project's directory in the repository
+        type: string
+        default: .
+      toolchains-ref:
+        description: the ref of this repository whose scripts are used; empty for the caller's checkout
+        type: string
+        default: v1
+      toolchains-repository:
+        description: this repository
+        type: string
+        default: szaghi/fortran-toolchains
+    outputs:
+      tag:
+        description: the release's tag
+        value: ${{ jobs.release.outputs.tag }}
+      tarball:
+        description: the tarball's file name
+        value: ${{ jobs.release.outputs.tarball }}
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    # a dispatch from a branch would publish a release named after the branch
+    if: inputs.dry-run || github.ref_type == 'tag'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.tarball.outputs.tag }}
+      tarball: ${{ steps.tarball.outputs.tarball }}
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v7
+
+    - name: Checkout fortran-toolchains
+      if: inputs.toolchains-ref != ''
+      uses: actions/checkout@v7
+      with:
+        repository: ${{ inputs.toolchains-repository }}
+        ref: ${{ inputs.toolchains-ref }}
+        path: .fortran-toolchains
+
+    - name: Tarball and assets
+      id: tarball
+      env:
+        TAG: ${{ inputs.tag || github.ref_name }}
+        NAME: ${{ inputs.name }}
+        ASSETS: ${{ inputs.assets }}
+        EXCLUDES: ${{ inputs.excludes }}
+        DRY_RUN: ${{ inputs.dry-run }}
+        # without the caller's: a tag given on a branch would be created there by the publication
+        REF_TYPE: ${{ github.ref_type }}
+        REF_NAME: ${{ github.ref_name }}
+      run: |
+        if [ "$DRY_RUN" != true ] && { [ "$REF_TYPE" != tag ] || [ "$TAG" != "$REF_NAME" ]; }; then
+          echo "::error::publishing releases the run's own tag ($REF_TYPE $REF_NAME), not $TAG"; exit 1
+        fi
+        name=${NAME:-${GITHUB_REPOSITORY##*/}}
+        out=$RUNNER_TEMP/release; mkdir -p "$out"
+        args=(); for e in $EXCLUDES; do args+=("--exclude=$e"); done
+        # the glob leaves out the dot-directories (.git, .github, .fortran-toolchains)
+        tar --xform="s%^%$name-$TAG/%" -czf "$out/$name-$TAG.tar.gz" "${args[@]}" -- *
+        for a in $ASSETS; do
+          [ -f "$a" ] || { echo "::error::asset $a: no such file"; exit 1; }
+          [ ! -e "$out/${a##*/}" ] || { echo "::error::asset $a: a second ${a##*/}"; exit 1; }
+          cp "$a" "$out/"
+        done
+        echo "::group::$name-$TAG.tar.gz"; tar -tzf "$out/$name-$TAG.tar.gz"; echo "::endgroup::"
+        ls -l "$out"
+        { echo "tag=$TAG"; echo "tarball=$name-$TAG.tar.gz"; echo "name=$name"; } >> "$GITHUB_OUTPUT"
+        echo "## $name $TAG: $(tar -tzf "$out/$name-$TAG.tar.gz" | wc -l) entries" >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Release notes
+      env:
+        TAG: ${{ steps.tarball.outputs.tag }}
+        CHANGELOG: ${{ inputs.changelog }}
+        TOOLS: ${{ inputs.toolchains-ref != '' && format('{0}/.fortran-toolchains', github.workspace) || github.workspace }}
+      run: |
+        python3 "$TOOLS/scripts/release-notes.py" "$TAG" "$CHANGELOG" > "$RUNNER_TEMP/release-notes.md"
+        tee -a "$GITHUB_STEP_SUMMARY" < "$RUNNER_TEMP/release-notes.md"
+
+    - name: Publish the release
+      if: ${{ !inputs.dry-run }}
+      uses: softprops/action-gh-release@v3
+      with:
+        tag_name: ${{ steps.tarball.outputs.tag }}
+        name: ${{ steps.tarball.outputs.name }} ${{ steps.tarball.outputs.tag }}
+        body_path: ${{ runner.temp }}/release-notes.md
+        working_directory: ${{ runner.temp }}/release
+        files: '*'
+        fail_on_unmatched_files: true
+
+    - name: The release, packed (dry run)
+      if: inputs.dry-run
+      run: cp "$RUNNER_TEMP/release-notes.md" "$RUNNER_TEMP/release/"
+
+    - name: Upload the release (dry run)
+      if: inputs.dry-run
+      uses: actions/upload-artifact@v7
+      with:
+        name: release
+        path: ${{ runner.temp }}/release
+        if-no-files-found: error
+        retention-days: 1
