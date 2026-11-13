@@ -42,7 +42,7 @@ docker run --rm -it -v $PWD:/work -w /work ghcr.io/szaghi/fortran-toolchains:gnu
 # tree (see Gotchas), the Linux jobs only
 act workflow_dispatch -W .github/workflows/selftest.yml -j matrix -P ubuntu-24.04=catthehacker/ubuntu:act-24.04 --pull=false
 
-# release the workflows (owner): tag vX.Y.Z, move v1; refuses unless Build, Contract and Selftest are green on HEAD
+# release the workflows (owner): tag vX.Y.Z, move v1; refuses unless Build, Contract and Selftest are green for HEAD
 scripts/release.sh 1.0.0 [--push]
 
 # CI status
@@ -108,8 +108,9 @@ never in the project's own tree: the container writes as root).
   `deploy: false` or `dry-run` call needs them, else the whole run fails at startup. act and actionlint do not model
   this check.
 - **Release**: `v1` is a moving major tag; `scripts/release.sh X.Y.Z` tags and moves it once Build, Contract and
-  Selftest are green on HEAD. A breaking change of a workflow's inputs is a new major (`v2`) and a new default
-  `toolchains-ref`.
+  Selftest are green for HEAD: each one's newest run on a commit since its `push.paths` last changed (a push runs a
+  path-filtered workflow only when its paths change, and on the push's head commit only). A breaking change of a
+  workflow's inputs is a new major (`v2`) and a new default `toolchains-ref`.
 - **CI (`.github/workflows/build.yml`)** builds and pushes one job per (vendor, flavour) on push to `main` (filtered by
   `paths`) or by `workflow_dispatch`. The layer cache is in the registry (`cache-<vendor>-<flavour>` tags): the GHA
   cache's 10 GB per repository cannot hold the NVIDIA SDK layer beside the others. A hosted `ubuntu-24.04` runner has
