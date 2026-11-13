@@ -5,6 +5,7 @@
 #
 #   scripts/build.sh gnu lite    # gfortran and the tools
 #   scripts/build.sh gnu full    # + Open MPI, HDF5 (parallel, Fortran, static, deflate), FFTW 3, LZ4, LZMA
+#   scripts/build.sh gnu gui     # + X11/Wayland development headers, Xvfb, Mesa (GUI programs without display or GPU)
 #
 # Every flavour checks itself while building: a broken image is never pushed.
 
@@ -178,3 +179,23 @@ RUN cd /tmp \
  && rm -f check *.h5 \
  && printf 'program p\nend program p\n' > lz.f90 && gfortran lz.f90 -o lz -llz4 -llzma && ./lz && rm -f lz lz.f90 \
  && /opt/toolchain/check-versions.sh OPENMPI HDF5
+
+# --------------------------------------------------------------------------------------------------------------- gui
+# + what GUI programs need to build and run without a display or a GPU: the X11/Wayland development headers SDL
+# builds against, Xvfb (xvfb-run) and Mesa's llvmpipe (OpenGL in software)
+FROM full AS gui
+ARG GCC
+
+LABEL org.opencontainers.image.description="gfortran ${GCC}, Open MPI, HDF5, FoBiS; X11/Wayland headers, Xvfb, Mesa"
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxtst-dev \
+      libwayland-dev libxkbcommon-dev libegl-dev libdbus-1-dev libdecor-0-dev \
+      xvfb xauth libgl1-mesa-dri libglx-mesa0 mesa-utils \
+ && rm -rf /var/lib/apt/lists/*
+
+# checked: an X server starts (24-bit; xvfb-run's default screen is 640 x 480, 8-bit) and OpenGL is Mesa's llvmpipe
+RUN xvfb-run -a -s "-screen 0 1280x1024x24" glxinfo -B > /tmp/glxinfo \
+ && grep -E 'OpenGL renderer|OpenGL core profile version' /tmp/glxinfo \
+ && grep -q llvmpipe /tmp/glxinfo && rm /tmp/glxinfo
