@@ -59,3 +59,11 @@ jobs:
         echo "coverage output: $PCT"
         [ "$PCT" = 100.0 ]
         tar -tzf coverage-docs.tgz | tee /dev/stderr | grep -qx 'docs/public/coverage.json'
+
+  generated:
+    uses: ./.github/workflows/generated.yml
+    with:
+      command: bash scripts/docs_examples.sh
+      paths: docs/examples
+      working-directory: tests/fixture
+      toolchains-ref: ''

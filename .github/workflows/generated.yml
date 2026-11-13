@@ -1,0 +1,120 @@
+name: Generated
+
+# Reusable: the files a project generates and commits (the outputs its documentation shows, the tests its doctests
+# extract) must match their sources. The project's command regenerates them in a toolchain image; any change or new
+# file under the given paths fails the job, with the diff:
+#
+#   jobs:
+#     docs-examples:
+#       uses: szaghi/fortran-toolchains/.github/workflows/generated.yml@v1
+#       with:
+#         command: bash scripts/docs_examples.sh
+#         paths: docs/examples
+
+on:
+  workflow_call:
+    inputs:
+      command:
+        description: the regeneration, run with bash from working-directory
+        type: string
+        required: true
+      paths:
+        description: the generated paths, space separated, relative to working-directory
+        type: string
+        required: true
+      toolchain:
+        description: a Linux toolchain id (linux-gnu, linux-nvhpc, linux-oneapi)
+        type: string
+        default: linux-gnu
+      working-directory:
+        description: the project's directory in the repository
+        type: string
+        default: .
+      apt-packages:
+        description: Debian packages installed in the image first
+        type: string
+        default: ''
+      toolchains-ref:
+        description: the ref of this repository whose scripts are used; empty for the caller's checkout
+        type: string
+        default: v1
+      toolchains-repository:
+        description: this repository
+        type: string
+        default: szaghi/fortran-toolchains
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      image: ${{ steps.plan.outputs.image }}
+    steps:
+    - name: Checkout the caller
+      if: inputs.toolchains-ref == ''
+      uses: actions/checkout@v7
+
+    - name: Checkout fortran-toolchains
+      if: inputs.toolchains-ref != ''
+      uses: actions/checkout@v7
+      with:
+        repository: ${{ inputs.toolchains-repository }}
+        ref: ${{ inputs.toolchains-ref }}
+
+    - name: Image
+      id: plan
+      env:
+        REGISTRY: ghcr.io/${{ inputs.toolchains-repository }}
+        TOOLCHAIN: ${{ inputs.toolchain }}
+      run: |
+        image=$(scripts/plan.sh "$TOOLCHAIN" | sed -n 's/^linux=//p' | jq -r '.[0].image // empty')
+        [ -n "$image" ] || { echo "::error::$TOOLCHAIN is not a Linux toolchain"; exit 1; }
+        echo "image=$image" | tee -a "$GITHUB_OUTPUT"
+
+  check:
+    needs: plan
+    runs-on: ubuntu-24.04
+    container: ${{ needs.plan.outputs.image }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v7
+
+    - name: Packages
+      if: inputs.apt-packages != ''
+      env:
+        PACKAGES: ${{ inputs.apt-packages }}
+      # PACKAGES is a word list
+      run: |
+        # shellcheck disable=SC2086
+        apt-get update -qq && apt-get install -y -qq --no-install-recommends $PACKAGES
+
+    - name: Fetch dependencies
+      run: |
+        if [ -n "$(find . -name .deps_config.ini -not -path './.git/*' | head -1)" ]; then FoBiS.py fetch; fi
+
+    - name: Regenerate
+      env:
+        COMMAND: ${{ inputs.command }}
+      run: bash -c "$COMMAND"
+
+    - name: The generated files match the committed ones
+      env:
+        PATHS: ${{ inputs.paths }}
+      # PATHS is a word list
+      run: |
+        # shellcheck disable=SC2086
+        changes=$(git status --porcelain --untracked-files=all -- $PATHS)
+        if [ -n "$changes" ]; then
+          echo "$changes"
+          # shellcheck disable=SC2086
+          git --no-pager diff -- $PATHS
+          echo "::error::the generated files differ from the committed ones: regenerate them and commit the result"
+          exit 1
+        fi
+        echo "the generated files under $PATHS match the committed ones"
