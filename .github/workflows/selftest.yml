@@ -1,0 +1,37 @@
+name: Selftest
+
+# The reusable workflows of this repository, called on tests/fixture with this commit's actions and scripts
+# (toolchains-ref: '' uses this checkout), on every toolchain they support. A reusable workflow cannot be tested before
+# it is pushed: this is its gate, and the projects' callers pin a release tag (v1) once it is green.
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/**', '.github/actions/**', 'common/**', 'setup/**', 'scripts/**', 'tests/fixture/**',
+            'versions.env']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  matrix:
+    uses: ./.github/workflows/matrix.yml
+    with:
+      toolchains: linux-gnu linux-nvhpc linux-oneapi macos-gnu windows-gnu
+      working-directory: tests/fixture
+      toolchains-ref: ''
+
+  matrix-display:
+    uses: ./.github/workflows/matrix.yml
+    with:
+      toolchains: linux-gnu
+      script: scripts/ci/display.sh
+      display: true
+      working-directory: tests/fixture
+      toolchains-ref: ''

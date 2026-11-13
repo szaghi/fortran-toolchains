@@ -1,0 +1,250 @@
+name: Matrix
+
+# Reusable: a project script on a list of toolchains, any OS. Linux toolchains run in the images of this repository
+# (job containers), macOS and Windows through its setup actions; every toolchain exports the same environment contract
+# (FC CC CXX TOOLCHAIN TOOLCHAIN_OS TOOLCHAIN_FAMILY, the tools on PATH), so one script serves all of them:
+#
+#   jobs:
+#     matrix:
+#       uses: szaghi/fortran-toolchains/.github/workflows/matrix.yml@v1
+#       with:
+#         toolchains: linux-gnu linux-nvhpc linux-oneapi macos-gnu windows-gnu
+#         script: scripts/ci/matrix.sh
+#
+# Toolchain ids carry no version: the plan resolves them to the current images (versions.env). The setup actions and
+# scripts come from a checkout of this repository at `toolchains-ref` (the release tag the caller pins, v1); an empty
+# `toolchains-ref` uses the caller's own checkout instead (this repository's self-test).
+
+on:
+  workflow_call:
+    inputs:
+      toolchains:
+        description: toolchain ids, space separated (linux-gnu, linux-nvhpc, linux-oneapi, macos-gnu, windows-gnu)
+        type: string
+        required: true
+      script:
+        description: the project script, run with bash from working-directory
+        type: string
+        default: scripts/ci/matrix.sh
+      working-directory:
+        description: the project's directory in the repository
+        type: string
+        default: .
+      display:
+        description: a display for GUI programs (Linux - the gui image under Xvfb; Windows - Mesa llvmpipe, 1920x1080)
+        type: boolean
+        default: false
+      macos-flavour:
+        description: lite, or full (Homebrew Open MPI, HDF5 from source)
+        type: string
+        default: lite
+      apt-packages:
+        description: Debian/Ubuntu packages installed in the Linux images first
+        type: string
+        default: ''
+      brew-packages:
+        description: Homebrew packages for macOS
+        type: string
+        default: ''
+      msys2-packages:
+        description: MSYS2 packages for Windows, pacboy notation (e.g. sdl3:p mesa:p)
+        type: string
+        default: ''
+      artifacts:
+        description: a path (relative to working-directory) uploaded from every toolchain, whatever the outcome
+        type: string
+        default: ''
+      artifacts-name:
+        description: the artifact's name, suffixed with the toolchain id
+        type: string
+        default: artifacts
+      toolchains-ref:
+        description: the ref of this repository whose actions and scripts are used; empty for the caller's checkout
+        type: string
+        default: v1
+      toolchains-repository:
+        description: this repository
+        type: string
+        default: szaghi/fortran-toolchains
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      linux: ${{ steps.plan.outputs.linux }}
+      macos: ${{ steps.plan.outputs.macos }}
+      windows: ${{ steps.plan.outputs.windows }}
+    steps:
+    - name: Checkout the caller
+      if: inputs.toolchains-ref == ''
+      uses: actions/checkout@v7
+
+    - name: Checkout fortran-toolchains
+      if: inputs.toolchains-ref != ''
+      uses: actions/checkout@v7
+      with:
+        repository: ${{ inputs.toolchains-repository }}
+        ref: ${{ inputs.toolchains-ref }}
+
+    - name: Plan
+      id: plan
+      env:
+        REGISTRY: ghcr.io/${{ inputs.toolchains-repository }}
+        TOOLCHAINS: ${{ inputs.toolchains }}
+        DISPLAY_FLAG: ${{ inputs.display && '--display' || '' }}
+      # TOOLCHAINS and DISPLAY_FLAG are word lists
+      run: |
+        # shellcheck disable=SC2086
+        scripts/plan.sh $DISPLAY_FLAG $TOOLCHAINS | tee -a "$GITHUB_OUTPUT"
+
+  linux:
+    name: ${{ matrix.toolchain }}
+    needs: plan
+    if: needs.plan.outputs.linux != '[]'
+    runs-on: ubuntu-24.04
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.linux) }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v7
+
+    - name: Packages
+      if: inputs.apt-packages != ''
+      env:
+        PACKAGES: ${{ inputs.apt-packages }}
+      # PACKAGES is a word list
+      run: |
+        # shellcheck disable=SC2086
+        apt-get update -qq && apt-get install -y -qq --no-install-recommends $PACKAGES
+
+    - name: Script
+      env:
+        SCRIPT: ${{ inputs.script }}
+        WITH_DISPLAY: ${{ inputs.display }}
+      run: |
+        if [ "$WITH_DISPLAY" = true ]; then
+          xvfb-run -a -s "-screen 0 1280x1024x24" bash "$SCRIPT"
+        else
+          bash "$SCRIPT"
+        fi
+
+    - name: Upload the artifacts
+      if: always() && inputs.artifacts != ''
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ inputs.artifacts-name }}-${{ matrix.toolchain }}
+        path: ${{ inputs.working-directory }}/${{ inputs.artifacts }}
+        if-no-files-found: warn
+
+  macos:
+    name: ${{ matrix.toolchain }}
+    needs: plan
+    if: needs.plan.outputs.macos != '[]'
+    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: ${{ fromJSON(needs.plan.outputs.macos) }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v7
+
+    - name: Checkout fortran-toolchains
+      if: inputs.toolchains-ref != ''
+      uses: actions/checkout@v7
+      with:
+        repository: ${{ inputs.toolchains-repository }}
+        ref: ${{ inputs.toolchains-ref }}
+        path: .fortran-toolchains
+
+    - name: fortran-toolchains is this checkout
+      if: inputs.toolchains-ref == ''
+      run: mkdir .fortran-toolchains && tar --exclude=./.fortran-toolchains -cf - . | tar -xf - -C .fortran-toolchains
+
+    - name: Toolchain
+      uses: ./.fortran-toolchains/.github/actions/setup-macos
+      with:
+        flavour: ${{ inputs.macos-flavour }}
+        brew-packages: ${{ inputs.brew-packages }}
+
+    - name: Script
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        SCRIPT: ${{ inputs.script }}
+      run: bash "$SCRIPT"
+
+    - name: Upload the artifacts
+      if: always() && inputs.artifacts != ''
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ inputs.artifacts-name }}-${{ matrix.toolchain }}
+        path: ${{ inputs.working-directory }}/${{ inputs.artifacts }}
+        if-no-files-found: warn
+
+  windows:
+    name: ${{ matrix.toolchain }}
+    needs: plan
+    if: needs.plan.outputs.windows != '[]'
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: ${{ fromJSON(needs.plan.outputs.windows) }}
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v7
+
+    - name: Checkout fortran-toolchains
+      if: inputs.toolchains-ref != ''
+      uses: actions/checkout@v7
+      with:
+        repository: ${{ inputs.toolchains-repository }}
+        ref: ${{ inputs.toolchains-ref }}
+        path: .fortran-toolchains
+
+    - name: fortran-toolchains is this checkout
+      if: inputs.toolchains-ref == ''
+      shell: bash
+      run: mkdir .fortran-toolchains && tar --exclude=./.fortran-toolchains -cf - . | tar -xf - -C .fortran-toolchains
+
+    - name: Toolchain
+      uses: ./.fortran-toolchains/.github/actions/setup-windows
+      with:
+        msys2-packages: ${{ inputs.msys2-packages }}
+
+    # the runner has no GPU and its own OpenGL is 1.1: Mesa's llvmpipe (the project places Mesa's opengl32.dll beside
+    # its programs); its display is 1024 x 768
+    - name: Display
+      if: inputs.display
+      shell: pwsh
+      run: |
+        "GALLIUM_DRIVER=llvmpipe" | Out-File -FilePath $env:GITHUB_ENV -Append
+        try { Set-DisplayResolution -Width 1920 -Height 1080 -Force } catch { Write-Warning "$_" }
+
+    - name: Script
+      shell: msys2 {0}
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        SCRIPT: ${{ inputs.script }}
+      run: bash "$SCRIPT"
+
+    - name: Upload the artifacts
+      if: always() && inputs.artifacts != ''
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ inputs.artifacts-name }}-${{ matrix.toolchain }}
+        path: ${{ inputs.working-directory }}/${{ inputs.artifacts }}
+        if-no-files-found: warn
