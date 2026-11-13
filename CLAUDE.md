@@ -73,8 +73,11 @@ runner).
   a `matrix.toolchain` entry **and** a `paths` entry in `build.yml`. Without the `paths` entry, a push to the new
   directory does not trigger a build.
 - Any change to `build.yml` rebuilds every toolchain in the matrix.
-- Keep the stack identical to the workstations' (`~/.claude/CLAUDE.md` § Toolchains; ADAM's HDF5 commit). The only
-  intended difference is HDF5's deflate filter.
+- **Every toolchain tracks the latest version installed on the WSL box** (newest `/opt/gcc/bin/<ver>`,
+  `/opt/nvidia/hpc_sdk/Linux_x86_64/<ver>`, `/opt/intel/oneapi/compiler/latest`, …; Lmod-managed stacks, not the apt
+  `/usr/bin/gfortran`). Read versions from the WSL box, never from a consumer's workflow. No image is kept for an old
+  version: repos still on older ones get ported. MPI and HDF5 match the workstation build (ADAM's HDF5 commit); the
+  only intended difference is HDF5's deflate filter.
 - Projects move to a new toolchain by changing `toolchain_image` in each `fobos`, then `fobis scaffold sync`.
 
 ## Gotchas
