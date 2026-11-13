@@ -69,6 +69,58 @@ jobs:
         [ "$PCT" = 100.0 ]
         tar -tzf coverage-docs.tgz | tee /dev/stderr | grep -qx 'docs/public/coverage.json'
 
+  # the site of the fixture, deployed to this repository's Pages from main: the coverage from test's coverage-docs
+  # artifact (this run's)
+  docs:
+    needs: test
+    permissions:
+      contents: read
+      actions: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/docs.yml
+    with:
+      working-directory: tests/fixture
+      toolchains-ref: ''
+
+  # the coverage run by the docs job itself, no deployment
+  docs-run:
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/docs.yml
+    with:
+      coverage: run
+      deploy: false
+      working-directory: tests/fixture
+      toolchains-ref: ''
+
+  docs-check:
+    needs: [docs, docs-run]
+    runs-on: ubuntu-24.04
+    steps:
+    - name: The coverage sources, the deployment
+      env:
+        SOURCE: ${{ needs.docs.outputs.coverage-source }}
+        PCT: ${{ needs.docs.outputs.coverage }}
+        DEPLOYED: ${{ needs.docs.outputs.deployed }}
+        URL: ${{ needs.docs.outputs.page-url }}
+        RUN_SOURCE: ${{ needs.docs-run.outputs.coverage-source }}
+        RUN_PCT: ${{ needs.docs-run.outputs.coverage }}
+        RUN_DEPLOYED: ${{ needs.docs-run.outputs.deployed }}
+        MAIN: ${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+      run: |
+        echo "docs: $PCT% from the $SOURCE, deployed $DEPLOYED ($URL); docs-run: $RUN_PCT% from the $RUN_SOURCE"
+        [ "$SOURCE" = artifact ] && [ "$PCT" = 100.0 ]
+        [ "$RUN_SOURCE" = run ] && [ "$RUN_PCT" = 100.0 ] && [ "$RUN_DEPLOYED" = false ]
+        if [ "$MAIN" = true ]; then
+          [ "$DEPLOYED" = true ] && [ -n "$URL" ]
+          code=$(curl -s -o /dev/null -w '%{http_code}' "${URL%/}/coverage.json")
+          echo "coverage.json: HTTP $code"; [ "$code" = 200 ]
+        else
+          [ "$DEPLOYED" = false ]
+        fi
+
   generated:
     uses: ./.github/workflows/generated.yml
     with:

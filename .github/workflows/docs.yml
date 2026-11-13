@@ -1,0 +1,269 @@
+name: Docs
+
+# Reusable: the project's documentation built in a Linux toolchain image (formal, Node, FoBiS and the coverage tools
+# are in it), with the coverage badge, and deployed to GitHub Pages from the default branch:
+#
+#   on:
+#     workflow_run:
+#       workflows: [CI]
+#       types: [completed]
+#     workflow_dispatch:
+#   permissions:
+#     contents: read
+#     actions: read     # the coverage-docs artifact of the CI run
+#     pages: write
+#     id-token: write
+#   jobs:
+#     docs:
+#       uses: szaghi/fortran-toolchains/.github/workflows/docs.yml@v1
+#
+# The coverage (`coverage: auto`) comes from the coverage-docs artifact that the test workflow packs: the one of the
+# triggering workflow_run, else the one of this run (a caller whose docs job needs its test job), else the coverage
+# command runs here. The defaults are the FoBiS scaffold's; the build command runs formal once, through the
+# package.json's predocs:build. Only a successful run of the caller's own repository builds, and only the default
+# branch's commit deploys (`deploy: true`): a pull request's run builds and checks the site.
+
+on:
+  workflow_call:
+    inputs:
+      toolchain:
+        description: a Linux toolchain id (linux-gnu, linux-nvhpc, linux-oneapi)
+        type: string
+        default: linux-gnu
+      build-command:
+        description: the documentation build, run with bash from working-directory
+        type: string
+        default: cd docs && npm install --no-audit --no-fund && npm run docs:build
+      site:
+        description: the built site, relative to working-directory
+        type: string
+        default: docs/.vitepress/dist
+      coverage:
+        description: auto (the coverage-docs artifact, else the command), run (the command), none (no coverage, no badge)
+        type: string
+        default: auto
+      coverage-command:
+        description: the tests with coverage, run with bash from working-directory when no artifact is used
+        type: string
+        default: FoBiS.py rule --ex makecoverage-analysis
+      coverage-json:
+        description: the coverage JSON ({"pct":"87.3"}), relative to working-directory; rewritten as the shields badge
+        type: string
+        default: docs/public/coverage.json
+      deploy:
+        description: deploy the site to GitHub Pages (from the default branch only)
+        type: boolean
+        default: true
+      working-directory:
+        description: the project's directory in the repository
+        type: string
+        default: .
+      apt-packages:
+        description: Debian packages installed in the image first
+        type: string
+        default: ''
+      toolchains-ref:
+        description: the ref of this repository whose scripts are used; empty for the caller's checkout
+        type: string
+        default: v1
+      toolchains-repository:
+        description: this repository
+        type: string
+        default: szaghi/fortran-toolchains
+    outputs:
+      coverage:
+        description: the overall line coverage percentage (empty with coverage none)
+        value: ${{ jobs.build.outputs.coverage }}
+      coverage-source:
+        description: where the coverage came from (artifact, run, none)
+        value: ${{ jobs.build.outputs.coverage-source }}
+      deployed:
+        description: whether the site was deployed (true, false)
+        value: ${{ jobs.build.outputs.deploy }}
+      page-url:
+        description: the deployed site's URL
+        value: ${{ jobs.deploy.outputs.page-url }}
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    # a failed run, or one of a fork's pull request (workflow_run runs with this repository's token), builds nothing
+    if: >-
+      github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-24.04
+    outputs:
+      image: ${{ steps.plan.outputs.image }}
+    steps:
+    - name: Checkout the caller
+      if: inputs.toolchains-ref == ''
+      uses: actions/checkout@v7
+
+    - name: Checkout fortran-toolchains
+      if: inputs.toolchains-ref != ''
+      uses: actions/checkout@v7
+      with:
+        repository: ${{ inputs.toolchains-repository }}
+        ref: ${{ inputs.toolchains-ref }}
+
+    - name: Image
+      id: plan
+      env:
+        REGISTRY: ghcr.io/${{ inputs.toolchains-repository }}
+        TOOLCHAIN: ${{ inputs.toolchain }}
+        COVERAGE: ${{ inputs.coverage }}
+      run: |
+        case $COVERAGE in auto|run|none) ;; *) echo "::error::coverage is auto, run or none, not '$COVERAGE'"; exit 1 ;; esac
+        image=$(scripts/plan.sh "$TOOLCHAIN" | sed -n 's/^linux=//p' | jq -r '.[0].image // empty')
+        [ -n "$image" ] || { echo "::error::$TOOLCHAIN is not a Linux toolchain"; exit 1; }
+        echo "image=$image" | tee -a "$GITHUB_OUTPUT"
+
+  build:
+    needs: plan
+    runs-on: ubuntu-24.04
+    container: ${{ needs.plan.outputs.image }}
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      coverage: ${{ steps.coverage.outputs.pct }}
+      coverage-source: ${{ steps.coverage.outputs.source }}
+      deploy: ${{ steps.deploy.outputs.deploy }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+    - name: Checkout repository
+      if: github.event_name != 'workflow_run'
+      uses: actions/checkout@v7
+
+    # the commit the triggering run tested, not the head of the branch when this job starts (a separate step: act
+    # fetches any ref given, even an empty one, from GitHub instead of using the local tree)
+    - name: Checkout the commit of the triggering run
+      if: github.event_name == 'workflow_run'
+      uses: actions/checkout@v7
+      with:
+        ref: ${{ github.event.workflow_run.head_sha }}
+
+    - name: Packages
+      if: inputs.apt-packages != ''
+      env:
+        PACKAGES: ${{ inputs.apt-packages }}
+      # PACKAGES is a word list
+      run: |
+        # shellcheck disable=SC2086
+        apt-get update -qq && apt-get install -y -qq --no-install-recommends $PACKAGES
+
+    - name: Fetch dependencies
+      run: |
+        if [ -n "$(find . -name .deps_config.ini -not -path './.git/*' | head -1)" ]; then FoBiS.py fetch; fi
+
+    - name: Download the coverage outputs of the triggering run
+      id: artifact-run
+      if: inputs.coverage == 'auto' && github.event_name == 'workflow_run'
+      continue-on-error: true
+      uses: actions/download-artifact@v8
+      with:
+        name: coverage-docs
+        run-id: ${{ github.event.workflow_run.id }}
+        github-token: ${{ github.token }}
+        path: ${{ runner.temp }}/coverage-docs
+
+    - name: Download the coverage outputs of this run
+      id: artifact-this
+      if: inputs.coverage == 'auto' && github.event_name != 'workflow_run'
+      continue-on-error: true
+      uses: actions/download-artifact@v8
+      with:
+        name: coverage-docs
+        path: ${{ runner.temp }}/coverage-docs
+
+    - name: Unpack the coverage outputs
+      id: unpacked
+      if: steps.artifact-run.outcome == 'success' || steps.artifact-this.outcome == 'success'
+      continue-on-error: true
+      env:
+        JSON: ${{ inputs.coverage-json }}
+      run: |
+        tar -xzvf "$RUNNER_TEMP/coverage-docs/coverage-docs.tgz"
+        pct=$(jq -r '.pct' "$JSON")
+        case $pct in ''|null) echo "::warning::no coverage percentage in the packed outputs"; exit 1 ;; esac
+
+    - name: Tests with coverage
+      if: inputs.coverage == 'run' || (inputs.coverage == 'auto' && steps.unpacked.outcome != 'success')
+      env:
+        COMMAND: ${{ inputs.coverage-command }}
+      run: bash -c "$COMMAND"
+
+    # the coverage JSON becomes the shields.io endpoint badge the site serves (a README's badge points at it)
+    - name: Coverage badge
+      id: coverage
+      if: inputs.coverage != 'none'
+      env:
+        JSON: ${{ inputs.coverage-json }}
+        SOURCE: ${{ steps.unpacked.outcome == 'success' && 'artifact' || 'run' }}
+      run: |
+        pct=$(jq -r '.pct' "$JSON")
+        if ! [[ $pct =~ ^[0-9]+(\.[0-9]+)?$ ]]; then echo "::error::no coverage percentage in $JSON: '$pct'"; exit 1; fi
+        if awk "BEGIN{exit !($pct >= 90)}"; then color=brightgreen
+        elif awk "BEGIN{exit !($pct >= 80)}"; then color=green
+        elif awk "BEGIN{exit !($pct >= 70)}"; then color=yellowgreen
+        elif awk "BEGIN{exit !($pct >= 60)}"; then color=yellow
+        else color=red; fi
+        printf '{"schemaVersion":1,"label":"coverage","message":"%s%%","color":"%s"}\n' "$pct" "$color" > "$JSON"
+        { echo "pct=$pct"; echo "source=$SOURCE"; } >> "$GITHUB_OUTPUT"
+        echo "## Test coverage: $pct% (from the $SOURCE)" >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Build the documentation
+      env:
+        COMMAND: ${{ inputs.build-command }}
+        COVERAGE_PCT: ${{ steps.coverage.outputs.pct }}
+      run: bash -c "$COMMAND"
+
+    - name: The site
+      env:
+        SITE: ${{ inputs.site }}
+      run: |
+        [ -f "$SITE/index.html" ] || { echo "::error::no $SITE/index.html: the build wrote no site there"; exit 1; }
+        echo "$(find "$SITE" -name '*.html' | wc -l) pages, $(du -sh "$SITE" | cut -f1)"
+
+    # only the default branch's commit: a push, or the successful run of a push (pull requests run on their merge ref)
+    - name: Deploy?
+      id: deploy
+      env:
+        DEPLOY: >-
+          ${{ inputs.deploy && ((github.event_name == 'workflow_run' && github.event.workflow_run.event == 'push' &&
+          github.event.workflow_run.head_branch == github.event.repository.default_branch) ||
+          (github.event_name != 'workflow_run' &&
+          github.ref == format('refs/heads/{0}', github.event.repository.default_branch))) }}
+      run: echo "deploy=$DEPLOY" | tee -a "$GITHUB_OUTPUT"
+
+    - name: Upload the site for Pages
+      if: steps.deploy.outputs.deploy == 'true'
+      uses: actions/upload-pages-artifact@v5
+      with:
+        path: ${{ inputs.working-directory }}/${{ inputs.site }}
+
+  deploy:
+    needs: build
+    if: needs.build.outputs.deploy == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    # one deployment at a time, none cancelled half-way
+    concurrency:
+      group: pages-${{ github.repository }}
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      page-url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v5

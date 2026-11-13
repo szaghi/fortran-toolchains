@@ -9,3 +9,4 @@ FoBiS library laid out as the projects are, with what each workflow drives.
 | `test` | `FoBiS.py rule --ex makecoverage-analysis` (the scaffold's coverage step): `docs/public/coverage.json` |
 | `generated` | `scripts/docs_examples.sh`: regenerates `docs/examples/sum.txt`, the committed output of an example |
 | `fpm` | `fpm test`, `fpm build --profile release` (`fpm.toml`, `test/`) |
+| `docs` | `cd docs && npm install && npm run docs:build` (formal through `predocs:build`, then VitePress), the coverage badge in `docs/public/coverage.json`; Selftest deploys the site to this repository's Pages |
