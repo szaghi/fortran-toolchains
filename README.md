@@ -6,7 +6,7 @@ compiler of the image.
 
 | Image | Compiler | MPI | HDF5 | Tools |
 |---|---|---|---|---|
-| `ghcr.io/szaghi/fortran-toolchains:gnu-16.2` | gfortran 16.2.0 (official `gcc:16.2.0`, Debian trixie) | Open MPI 5.0.11 (`mpi_f08`) | 2.3.0, develop `ab5df552`: parallel, Fortran, high-level, static, deflate | FoBiS, ford, formal, gcovr, CMake, git, jq, GNU awk; zlib, FFTW 3 |
+| `ghcr.io/szaghi/fortran-toolchains:gnu-16.2` | gfortran 16.2.0 (official `gcc:16.2.0`, Debian trixie) | Open MPI 5.0.11 (`mpi_f08`) | 2.3.0, develop `ab5df552`: parallel, Fortran, high-level, static, deflate | FoBiS, ford, formal, gcovr, CMake, git, jq, GNU awk; zlib, LZ4, LZMA, FFTW 3 |
 
 The same stack as the workstations (Lmod `gcc/16.2.0`, `openmpi/5.0.11-gnu16.2.0`, ADAM's `lib/hdf5/develop/gnu/16.2.0`),
 but HDF5 has the deflate filter. Each image is also tagged with its build date (`gnu-16.2-20261111`) to pin a build.

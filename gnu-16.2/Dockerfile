@@ -51,7 +51,7 @@ LABEL org.opencontainers.image.source=https://github.com/szaghi/fortran-toolchai
       org.opencontainers.image.description="gfortran 16.2.0, Open MPI 5.0.11, HDF5 2.3.0 (parallel, Fortran), FoBiS"
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends cmake zlib1g-dev libfftw3-dev pkg-config git make jq gawk python3 python3-venv \
+ && apt-get install -y --no-install-recommends cmake zlib1g-dev liblz4-dev liblzma-dev libfftw3-dev pkg-config git make jq gawk python3 python3-venv \
                                                ca-certificates curl xz-utils bzip2 unzip \
  && rm -rf /var/lib/apt/lists/*
 
@@ -84,5 +84,6 @@ RUN cd /tmp \
             -L/opt/hdf5/lib -lhdf5_fortran -lhdf5_f90cstub -lhdf5 -lz -ldl -lm \
  && mpirun -np 2 ./check \
  && rm -f check *.h5 \
+ && printf 'program p\nend program p\n' > lz.f90 && gfortran lz.f90 -o lz -llz4 -llzma && ./lz && rm -f lz lz.f90 \
  && git init -q /tmp/repo && chown -R 1001:1001 /tmp/repo && git -C /tmp/repo ls-files && rm -rf /tmp/repo \
  && gfortran --version | head -1 && mpifort --version | head -1 && mpirun --version | head -1 && fobis --version
