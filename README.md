@@ -49,5 +49,6 @@ source). The *Build* workflow builds and pushes an image when its directory chan
 building (`check.f90`: `mpi_f08` and `hdf5` modules, a parallel HDF5 file written by 2 ranks, the deflate filter), so a
 broken toolchain is never pushed.
 
-A new toolchain is a new directory (`gnu-17.1`, `nvhpc-26.9`, ...) and a matrix entry of the workflow; the projects move
+A new toolchain is a new directory (`gnu-17.1`, `nvhpc-26.9`, ...), a matrix entry of the workflow and an entry in its
+`paths` filter (without it a change to the directory does not trigger a build); the projects move
 by changing the image tag in their workflows (through the FoBiS scaffold templates).
