@@ -47,6 +47,9 @@ case ${1:?usage: setup-linux-bare.sh repo|install} in
     mkdir -p "$home/debs/partial"
     # shellcheck disable=SC2086 # a list of package names
     $sudo apt-get install -y -qq --no-install-recommends -o Dir::Cache::archives="$home/debs" $compilers > /dev/null
+    # apt (root) leaves partial/ (mode 700) and lock (600) there: back to the runner's user, or actions/cache cannot
+    # read the directory and only warns that it failed to save it
+    $sudo chown -R "$(id -u):$(id -g)" "$home/debs"
     echo "compiler packages: $(find "$home/debs" -maxdepth 1 -name '*.deb' | wc -l) in $home/debs ($(du -sh "$home/debs" | cut -f1))"
 
     $sudo env CMAKE="$(pin CMAKE)" NINJA="$(pin NINJA)" FPM="$(pin FPM)" "$root/common/install-tools.sh" cmake ninja fpm
