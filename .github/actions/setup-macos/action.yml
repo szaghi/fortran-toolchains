@@ -1,0 +1,57 @@
+name: Set up the macOS toolchain
+description: >-
+  The macos-gnu toolchain on a GitHub macOS runner: Homebrew gcc (the major of the versions.env pin), fpm, ninja,
+  pkg-config, CMake and FoBiS at their pins; with flavour full, Homebrew Open MPI and HDF5 at the pinned commit built
+  from source (cached). Exports the environment contract and checks it; versions drifting within their major warn.
+
+inputs:
+  flavour:
+    description: lite (compiler and tools) or full (+ Open MPI, HDF5)
+    default: lite
+  brew-packages:
+    description: further Homebrew packages, space separated (e.g. sdl3)
+    default: ''
+
+runs:
+  using: composite
+  steps:
+
+  - name: Compiler and tools
+    id: tools
+    shell: bash
+    env:
+      FLAVOUR: ${{ inputs.flavour }}
+      PACKAGES: ${{ inputs.brew-packages }}
+    # PACKAGES is a space-separated list of package names
+    run: |
+      # shellcheck disable=SC2086
+      "$GITHUB_ACTION_PATH/../../../common/setup-macos.sh" tools "$FLAVOUR" $PACKAGES
+      echo "hdf5=$(sed -n 's/^HDF5_COMMIT=//p' "$GITHUB_ACTION_PATH/../../../versions.env")" >> "$GITHUB_OUTPUT"
+
+  - name: HDF5 cache
+    if: inputs.flavour == 'full'
+    uses: actions/cache@v4
+    with:
+      path: ~/.fortran-toolchains/hdf5
+      key: hdf5-${{ steps.tools.outputs.hdf5 }}-macos-${{ runner.arch }}-gfortran${{ steps.tools.outputs.gfortran }}-openmpi${{ steps.tools.outputs.openmpi }}
+
+  - name: HDF5
+    if: inputs.flavour == 'full'
+    shell: bash
+    run: '"$GITHUB_ACTION_PATH/../../../common/setup-macos.sh" hdf5'
+
+  - name: Check the contract and the versions
+    shell: bash
+    env:
+      FLAVOUR: ${{ inputs.flavour }}
+    run: |
+      common="$GITHUB_ACTION_PATH/../../../common"
+      keys="GCC FPM CMAKE NINJA FOBIS"
+      if [ "$FLAVOUR" = full ]; then
+        "$common/check-contract.sh" --mpi
+        keys="$keys OPENMPI HDF5"
+      else
+        "$common/check-contract.sh"
+      fi
+      # shellcheck disable=SC2086
+      "$common/check-versions.sh" --policy major --pins "$GITHUB_ACTION_PATH/../../../versions.env" $keys
