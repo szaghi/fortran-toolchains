@@ -267,3 +267,7 @@ jobs:
     - name: Deploy to GitHub Pages
       id: deployment
       uses: actions/deploy-pages@v5
+      with:
+        # the default 10 minutes cancels a large site still in Pages' file sync (FOSSIL's stayed at syncing_files past
+        # 10 minutes, twice)
+        timeout: 1800000
