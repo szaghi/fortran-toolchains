@@ -53,6 +53,41 @@ Nothing is installed when the job runs. The images set:
 A GUI program runs under Xvfb in `gnu-16.2-gui`: `xvfb-run -a -s "-screen 0 1280x1024x24" <program>` (24-bit; the
 default screen is 640 x 480, 8-bit).
 
+## The environment contract
+
+Every toolchain, an image or a setup action, exports the same environment, so one project script runs on all of them
+(`common/check-contract.sh` checks it at build time in every image and at the end of every setup action; the
+*Contract* workflow checks the published images and the setups on their runners):
+
+| Variable | Meaning |
+|---|---|
+| `FC`, `CC`, `CXX` | the Fortran compiler; the C/C++ companions (gcc/g++ beside gfortran, nvfortran and ifx; Apple clang on macOS) |
+| `MPIFC`, `MPIRUN`, `HDF5_ROOT` | with MPI (the `full` flavour): the MPI Fortran wrapper, the launcher, HDF5 (`include/`, static `lib/`) |
+| `TOOLCHAIN` | the toolchain id: `linux-gnu-16.2`, `linux-nvhpc-26.9`, `linux-oneapi-2026.2`, `macos-gnu`, `windows-gnu`, `linux-bare` |
+| `TOOLCHAIN_OS`, `TOOLCHAIN_FAMILY` | `linux`, `macos`, `windows`; `gnu`, `nvf`, `intel` (also the suffix of the fobos modes: `tests-$TOOLCHAIN_FAMILY`) |
+
+and `fobis`, `fpm`, `python3` (>= 3.11), `cmake`, `ninja`, `pkg-config` on `PATH`.
+
+## Without an image: macOS, Windows, a fresh Linux runner
+
+Containers run only on Linux runners, so the other platforms get a composite action of this repository:
+
+```yaml
+- uses: szaghi/fortran-toolchains/.github/actions/setup-macos@main     # macos-15; with: {flavour: full} adds Open MPI, HDF5
+- uses: szaghi/fortran-toolchains/.github/actions/setup-windows@main   # windows-latest; steps then use shell: msys2 {0}
+- uses: szaghi/fortran-toolchains/.github/actions/setup-linux-bare@main  # a fresh ubuntu-24.04 (installer tests)
+```
+
+- **macOS**: Homebrew gcc (the major of the `GCC` pin; `FC=gfortran-16`), fpm, ninja, pkg-config; CMake and FoBiS at
+  their pins; `full`: Homebrew Open MPI and HDF5 at the pinned commit built from source, cached. `CC`/`CXX` are Apple
+  clang.
+- **Windows**: MSYS2 UCRT64 gfortran, fpm, CMake, ninja, pkgconf, Python, FoBiS at its pin. Lite only (no MPI).
+- **Fresh Linux**: gcc/g++/gfortran from the `ubuntu-toolchain-r/test` PPA (its gcc 16 is a 16.0.1 snapshot), CMake,
+  ninja, fpm, FoBiS at their pins.
+
+Homebrew, MSYS2 and the PPA are rolling: they cannot install an exact version. A component within the major of its pin
+is accepted with a warning annotation; another major fails the job (`check-versions.sh --policy major`).
+
 ## Locally
 
 ```bash
