@@ -30,7 +30,7 @@ runs:
 
   - name: HDF5 cache
     if: inputs.flavour == 'full'
-    uses: actions/cache@v4
+    uses: actions/cache@v6
     with:
       path: ~/.fortran-toolchains/hdf5
       key: hdf5-${{ steps.tools.outputs.hdf5 }}-macos-${{ runner.arch }}-gfortran${{ steps.tools.outputs.gfortran }}-openmpi${{ steps.tools.outputs.openmpi }}
