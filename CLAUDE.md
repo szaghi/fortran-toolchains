@@ -66,8 +66,9 @@ never in the project's own tree: the container writes as root).
   build, so `build-push-action` never pushes a broken image.
 - **CI (`.github/workflows/build.yml`)** builds and pushes one job per (vendor, flavour) on push to `main` (filtered by
   `paths`) or by `workflow_dispatch`. The layer cache is in the registry (`cache-<vendor>-<flavour>` tags): the GHA
-  cache's 10 GB per repository cannot hold the NVIDIA SDK layer beside the others. `nvhpc` jobs free the runner's disk
-  first. `REGISTRY` comes from `github.repository`.
+  cache's 10 GB per repository cannot hold the NVIDIA SDK layer beside the others. A hosted `ubuntu-24.04` runner has
+  145 GB on `/`, 86 GB free (measured 2026-11-13): no job needs to free disk, not even `nvhpc`'s (5 GB download, 15 GB
+  installed before the trim). `REGISTRY` comes from `github.repository`.
 
 ## The consumer contract
 

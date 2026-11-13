@@ -21,8 +21,8 @@ git, jq, GNU awk, make, pkg-config, curl.
 The same stack as the workstations (Lmod `gcc/16.2.0`, `openmpi/5.0.11-gnu16.2.0`, ADAM's `lib/hdf5/develop/gnu/16.2.0`),
 but HDF5 has the deflate filter. Each image is also tagged with its build date (`gnu-16.2-20261111`) to pin a build.
 
-Compressed (pulled) sizes: `gnu-16.2` 0.9 GB, `oneapi-2026.2` 1.7 GB, `nvhpc-26.9` 3.9 GB (9 GB on disk: a job using
-it may need to free disk first). The NVIDIA SDK is trimmed of what compiling and CPU runs do not need: profilers,
+Compressed (pulled) sizes: `gnu-16.2` 0.9 GB, `oneapi-2026.2` 1.7 GB, `nvhpc-26.9` 3.9 GB (9 GB on disk; a hosted
+`ubuntu-24.04` runner has 86 GB free on `/`). The NVIDIA SDK is trimmed of what compiling and CPU runs do not need: profilers,
 examples, NCCL, NVSHMEM, CUDA forward compatibility, the static math libraries.
 
 ## Use in GitHub Actions
