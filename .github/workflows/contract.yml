@@ -33,7 +33,7 @@ jobs:
       images: ${{ steps.images.outputs.images }}
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v5
+      uses: actions/checkout@v7
 
     - name: The published images (one per vendor directory, full flavour)
       id: images
@@ -55,7 +55,7 @@ jobs:
         image: ${{ fromJSON(needs.plan.outputs.images) }}
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v5
+      uses: actions/checkout@v7
 
     - name: Contract
       run: common/check-contract.sh --mpi
@@ -65,7 +65,7 @@ jobs:
     runs-on: macos-15
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v5
+      uses: actions/checkout@v7
 
     - name: Set up the toolchain (checks the contract)
       uses: ./.github/actions/setup-macos
@@ -77,7 +77,7 @@ jobs:
     runs-on: windows-latest
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v5
+      uses: actions/checkout@v7
 
     - name: Set up the toolchain (checks the contract)
       uses: ./.github/actions/setup-windows
@@ -87,7 +87,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v5
+      uses: actions/checkout@v7
 
     - name: Set up the toolchain (checks the contract)
       uses: ./.github/actions/setup-linux-bare
