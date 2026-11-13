@@ -25,9 +25,12 @@ grep -qE "^FROM .* AS ${flavour}\$" "$root/$vendor/Dockerfile" \
 build_args=$(grep -E '^[A-Z0-9_]+=' "$root/versions.env")
 value() { sed -n "s/^$1=//p" <<< "$build_args"; }
 
+# the version a vendor's tag carries: its compiler's
 case $vendor in
-  gnu) version=$(value GCC) ;;
-  *)   echo "error: no version rule for vendor '$vendor'" >&2; exit 2 ;;
+  gnu)    version=$(value GCC) ;;
+  nvhpc)  version=$(value NVHPC) ;;
+  oneapi) version=$(value IFX) ;;
+  *)      echo "error: no version rule for vendor '$vendor'" >&2; exit 2 ;;
 esac
 tag="$registry:$vendor-$(cut -d. -f1,2 <<< "$version")"
 [[ $flavour == full ]] || tag="$tag-$flavour"

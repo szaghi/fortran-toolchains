@@ -14,6 +14,12 @@ probe() {
   case $1 in
     GCC)        version_of gfortran -dumpfullversion ;;
     OPENMPI)    version_of mpirun --version ;;
+    INTEL_MPI)  version_of mpirun --version ;;
+    IFX)        version_of ifx --version ;;
+    NVHPC)      version_of nvfortran --version ;;
+    CUDA)       find "${NVHPC_ROOT:-/nonexistent}/cuda" -mindepth 1 -maxdepth 1 -printf '%f\n' 2>/dev/null \
+                  | grep -E '^[0-9]+\.[0-9]+$' | sort -V | tail -1 || true ;;
+    UBUNTU)     sed -n 's/^VERSION_ID="\{0,1\}\([0-9.]*\)"\{0,1\}$/\1/p' /etc/os-release ;;
     HDF5)       sed -n 's/^ *HDF5 Version: *//p' /opt/hdf5/lib/libhdf5.settings 2>/dev/null || true ;;
     NODE)       version_of node --version ;;
     FOBIS)      version_of fobis --version ;;
