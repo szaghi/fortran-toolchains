@@ -8,7 +8,8 @@
 #   linux-bare.sh repo       the PPA added; prints the compiler's PPA version as a step output (gcc=) for the
 #                                  cache key
 #   linux-bare.sh install    the compiler, apt's archives in $FORTRAN_TOOLCHAINS_HOME/debs (the cached directory:
-#                                  restored packages are not downloaded again), the tools; exports the contract
+#                                  restored packages are not downloaded again), the tools, unversioned links to the
+#                                  compilers ahead of the runner's own; exports the contract
 #
 # Writes to $GITHUB_ENV, $GITHUB_PATH and $GITHUB_OUTPUT inside a job; prints `export` lines otherwise.
 set -euo pipefail
@@ -55,6 +56,12 @@ case ${1:?usage: linux-bare.sh repo|install} in
     $sudo env CMAKE="$(pin CMAKE)" NINJA="$(pin NINJA)" FPM="$(pin FPM)" "$root/common/install-tools.sh" cmake ninja fpm
     "$root/common/install-venv.sh" --fobis "$home/venv" "$pins"
 
+    # the unversioned names a project's makefile or fobos calls (gfortran, not gfortran-16) at the PPA's compilers,
+    # ahead of the runner's own gcc
+    mkdir -p "$home/bin"
+    for tool in gcc g++ gfortran gcov; do ln -sf "$(command -v "$tool-$major")" "$home/bin/$tool"; done
+    echo "gfortran: $("$home/bin/gfortran" -dumpfullversion) ($(readlink "$home/bin/gfortran"))"
+    addpath "$home/bin"
     addpath /opt/cmake/bin
     addpath /opt/tools/bin
     addpath "$home/venv/bin"

@@ -1,0 +1,146 @@
+name: Install
+
+# Reusable: a published release installed as its users do, on a fresh runner (the linux-bare toolchain: gcc of the
+# versions.env major from the PPA, CMake, ninja, fpm, FoBiS; no image): the release's installer (its install.sh asset,
+# the FoBiS scaffold's) downloads the release's tarball and builds it with each build system the tarball carries
+# (make, cmake, fobis), and fpm builds the tarball's fpm.toml. Called by a project's release workflow after its
+# release job (see release.yml):
+#
+#   install:
+#     needs: release
+#     uses: szaghi/fortran-toolchains/.github/workflows/install.yml@v1
+#     with:
+#       tag: ${{ github.ref_name }}
+#
+# The release is public when this runs: a failure flags a broken release, it cannot block it.
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: the release's tag
+        type: string
+        required: true
+      repository:
+        description: the release's repository (default the caller's)
+        type: string
+        default: ''
+      builds:
+        description: auto (every build system the tarball carries), or a list of make, cmake, fobis, fpm
+        type: string
+        default: auto
+      apt-packages:
+        description: Ubuntu packages installed first (what the project's build needs beyond the toolchain)
+        type: string
+        default: ''
+      toolchains-ref:
+        description: the ref of this repository whose scripts are used; empty for the caller's checkout
+        type: string
+        default: v1
+      toolchains-repository:
+        description: this repository
+        type: string
+        default: szaghi/fortran-toolchains
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    name: install (${{ inputs.repository || github.repository }} ${{ inputs.tag }})
+    runs-on: ubuntu-24.04
+    env:
+      TAG: ${{ inputs.tag }}
+      REPO: ${{ inputs.repository || github.repository }}
+      # the release's API (rate limits; a private repository's assets)
+      GH_TOKEN: ${{ github.token }}
+    steps:
+    - name: Checkout repository
+      if: inputs.toolchains-ref == ''
+      uses: actions/checkout@v7
+
+    - name: fortran-toolchains is this checkout
+      if: inputs.toolchains-ref == ''
+      run: mkdir .fortran-toolchains && tar --exclude=./.fortran-toolchains -cf - . | tar -xf - -C .fortran-toolchains
+
+    - name: Checkout fortran-toolchains
+      if: inputs.toolchains-ref != ''
+      uses: actions/checkout@v7
+      with:
+        repository: ${{ inputs.toolchains-repository }}
+        ref: ${{ inputs.toolchains-ref }}
+        path: .fortran-toolchains
+
+    - name: Toolchain
+      uses: ./.fortran-toolchains/.github/actions/setup-linux-bare
+
+    - name: Packages
+      if: inputs.apt-packages != ''
+      env:
+        PACKAGES: ${{ inputs.apt-packages }}
+      # PACKAGES is a word list
+      run: |
+        # shellcheck disable=SC2086
+        sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends $PACKAGES
+
+    # the release's assets: its installer, and its tarball to tell which build systems it carries
+    - name: The release
+      id: release
+      env:
+        BUILDS: ${{ inputs.builds }}
+      run: |
+        dir=$RUNNER_TEMP/release; mkdir -p "$dir"
+        api() { curl -fsSL --retry 3 -H "Authorization: Bearer $GH_TOKEN" "$@"; }
+        api "https://api.github.com/repos/$REPO/releases/tags/$TAG" > "$dir/release.json"
+        jq -r '.assets[] | select(.name == "install.sh" or (.name | endswith(".tar.gz"))) | "\(.url) \(.name)"' \
+          "$dir/release.json" | while read -r url name; do
+          api -H 'Accept: application/octet-stream' -o "$dir/$name" "$url"
+        done
+        ls -l "$dir"
+        tarball=$(find "$dir" -maxdepth 1 -name '*.tar.gz' | head -1)
+        [ -n "$tarball" ] || { echo "::error::$REPO $TAG has no tarball asset"; exit 1; }
+        [ -f "$dir/install.sh" ] || { echo "::error::$REPO $TAG has no install.sh asset"; exit 1; }
+        files=$(tar -tzf "$tarball" | sed -n 's%^[^/]*/\([^/]*\)$%\1%p')
+        carries() {   # carries <build>: the tarball has the build system's top-level file
+          case $1 in
+            make) grep -qxE 'Makefile|makefile|GNUmakefile' <<< "$files" ;;
+            cmake) grep -qx CMakeLists.txt <<< "$files" ;;
+            fobis) grep -qx fobos <<< "$files" ;;
+            fpm) grep -qx fpm.toml <<< "$files" ;;
+            *) echo "::error::unknown build $1 (make, cmake, fobis, fpm)"; exit 1 ;;
+          esac
+        }
+        legs=
+        if [ "$BUILDS" = auto ]; then
+          for b in make cmake fobis fpm; do if carries "$b"; then legs="$legs $b"; fi; done
+        else
+          for b in $BUILDS; do
+            carries "$b" || { echo "::error::the $REPO $TAG tarball has no $b build file"; exit 1; }
+            legs="$legs $b"
+          done
+        fi
+        [ -n "$legs" ] || { echo "::error::no build system in the $REPO $TAG tarball"; exit 1; }
+        echo "legs:$legs"
+        { echo "legs=$legs "; echo "tarball=$tarball"; } >> "$GITHUB_OUTPUT"
+
+    - name: install.sh --build make
+      if: contains(steps.release.outputs.legs, ' make ')
+      run: cd "$(mktemp -d)" && bash "$RUNNER_TEMP/release/install.sh" --repo "$REPO" --tag "$TAG" --download wget --build make
+
+    - name: install.sh --build cmake
+      if: contains(steps.release.outputs.legs, ' cmake ')
+      run: cd "$(mktemp -d)" && bash "$RUNNER_TEMP/release/install.sh" --repo "$REPO" --tag "$TAG" --download wget --build cmake
+
+    # fetches the fobos [dependencies], then builds the fobos default mode
+    - name: install.sh --build fobis
+      if: contains(steps.release.outputs.legs, ' fobis ')
+      run: cd "$(mktemp -d)" && bash "$RUNNER_TEMP/release/install.sh" --repo "$REPO" --tag "$TAG" --download wget --build fobis
+
+    # the tarball's fpm.toml, whatever the release's installer supports; fpm takes the compilers from FPM_*
+    - name: fpm build
+      if: contains(steps.release.outputs.legs, ' fpm ')
+      env:
+        TARBALL: ${{ steps.release.outputs.tarball }}
+      run: |
+        cd "$(mktemp -d)" && tar -xzf "$TARBALL" && cd ./*/
+        FPM_FC=$FC FPM_CC=$CC FPM_CXX=$CXX fpm build --profile release
