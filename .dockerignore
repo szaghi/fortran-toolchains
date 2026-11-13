@@ -1,4 +1,3 @@
-# the build context is the repository root (shared files under common/): send only what the Dockerfiles copy
+# the build context is the repository root, and the Dockerfiles copy only the shared recipes of common/
 *
 !common/
-!gnu/
