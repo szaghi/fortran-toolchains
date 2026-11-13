@@ -1,0 +1,11 @@
+name = "fixture"
+version = "0.1.0"
+license = "GPL-3.0-or-later"
+
+[library]
+source-dir = "src/lib"
+
+[build]
+auto-executables = false
+auto-tests = true
+auto-examples = false

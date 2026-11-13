@@ -1,0 +1,51 @@
+[modes]
+modes = tests-gnu tests-nvf tests-intel tests-gnu-coverage examples-gnu
+
+[common]
+src       = src/lib/ src/tests/
+build_dir = exe/
+obj_dir   = obj/
+mod_dir   = mod/
+colors    = False
+quiet     = True
+
+[tests-gnu]
+template = common
+compiler = gnu
+cflags   = -c -O0 -g -fcheck=all -std=f2018
+
+[tests-nvf]
+template = common
+compiler = nvfortran
+cflags   = -c -O0 -g -Mbounds
+
+[tests-intel]
+template = common
+compiler = intel_nextgen
+cflags   = -c -O0 -g -check all
+
+[tests-gnu-coverage]
+template = common
+compiler = gnu
+cflags   = -c -O0 -g -std=f2018
+coverage = True
+
+[examples-gnu]
+compiler  = gnu
+src       = src/lib/ src/examples/
+build_dir = exe/examples/
+obj_dir   = obj/
+mod_dir   = mod/
+cflags    = -c -O0 -std=f2018
+quiet     = True
+
+[rule-makecoverage]
+help   = Build the tests with coverage and run them
+rule_1 = FoBiS.py clean --mode tests-gnu-coverage
+rule_2 = FoBiS.py build --mode tests-gnu-coverage
+rule_3 = bash scripts/run_tests.sh
+
+[rule-makecoverage-analysis]
+help   = Coverage analysis: the badge JSON in docs/public/coverage.json
+rule_1 = FoBiS.py rule --ex makecoverage
+rule_2 = bash scripts/compute-coverage.sh
