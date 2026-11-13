@@ -1,0 +1,21 @@
+name: Set up a fresh Linux runner
+description: >-
+  The linux-bare toolchain, for the jobs that must test a fresh machine rather than an image (installers): gcc, g++
+  and gfortran of the versions.env GCC major from the ubuntu-toolchain-r/test PPA, CMake, ninja, fpm and FoBiS at their
+  pins. Exports the environment contract and checks it; the PPA's gcc is a snapshot, so versions drifting within
+  their major warn.
+
+runs:
+  using: composite
+  steps:
+
+  - name: Compiler and tools
+    shell: bash
+    run: '"$GITHUB_ACTION_PATH/../../../common/setup-linux-bare.sh"'
+
+  - name: Check the contract and the versions
+    shell: bash
+    run: |
+      common="$GITHUB_ACTION_PATH/../../../common"
+      "$common/check-contract.sh"
+      "$common/check-versions.sh" --policy major --pins "$GITHUB_ACTION_PATH/../../../versions.env" GCC FPM CMAKE NINJA FOBIS
