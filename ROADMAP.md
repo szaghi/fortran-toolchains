@@ -62,16 +62,15 @@ major of its pin warns, another major fails (`check-versions.sh --policy major`)
 
 Inputs carry the project specifics (toolchain, fobos modes, check paths, packages); nothing names a repository.
 
-| Workflow | Replaces |
-|---|---|
-| `test` (build, tests, coverage, coverage artifact for the docs) | scaffold ci.yml, ADAM `test` |
-| `docs` (build on `workflow_run`, deploy with a long `deploy-pages` timeout) | scaffold docs.yml, FOSSIL's timeout patch, ADAM docs.yml, appelbe docs.yml |
-| `docs-examples` (regenerate, `git diff --exit-code`) | FiNeR, FoXy, FUNDAL, StringiFor, VecFor, VTKFortran, FLAP/forbear jobs |
-| `doctests-sync` | BeFoR64, StringiFor |
-| `fpm` (test, release build, publish) | VecFor, VTKFortran, figure, FLAP/forbear jobs |
-| `matrix` (a project script on a list of toolchains, any OS; see below) | FLAP/forbear matrix.yml, StringiFor compilers.yml, figure platforms.yml |
-| `nightly` (long validation runs) | FOSSIL validation.yml |
-| `release`, `install` (bare runner) | scaffold release.yml, install.yml |
+| Workflow | Replaces | Status |
+|---|---|---|
+| `test` (fetch, tests with coverage, coverage output, coverage-docs artifact) | scaffold ci.yml, ADAM `test` | done (Phase 4) |
+| `matrix` (a project script on a list of toolchains, any OS; see below) | FLAP/forbear matrix.yml, StringiFor compilers.yml, figure platforms.yml | done (Phase 4) |
+| `generated` (regenerate, then any change under the paths fails with the diff) | docs-examples of FiNeR, FoXy, FUNDAL, StringiFor, VecFor, VTKFortran, FLAP/forbear jobs; doctests-sync of BeFoR64, StringiFor | done (Phase 4): one workflow, both are "regenerate, then diff" |
+| `fpm` (test, release build, the toolchain's compilers) | VecFor, VTKFortran, figure, FLAP/forbear jobs | done (Phase 4); publishing (figure's fpm tag) not yet |
+| `docs` (build on `workflow_run`, deploy with a long `deploy-pages` timeout) | scaffold docs.yml, FOSSIL's timeout patch, ADAM docs.yml, appelbe docs.yml | to do |
+| `release`, `install` (bare runner, `setup-linux-bare`) | scaffold release.yml, install.yml | to do |
+| nightly runs | FOSSIL validation.yml | a caller's `schedule` on `matrix` or `test`: no workflow of its own |
 
 `test` stays separate from `matrix` for now (its coverage feeds the docs artifact); merging them (`matrix` with one
 toolchain and `coverage: true`) is reconsidered once both exist.
@@ -81,13 +80,14 @@ toolchain and `coverage: true`) is reconsidered once both exist.
 A toolchain is an (OS, compiler) pair: compilers and platforms are one axis. The workflow provisions toolchains and
 platform capabilities; the project owns its pipeline as a script.
 
-**Toolchain ids** (versions per rule 1):
+**Toolchain ids** carry no version: `scripts/plan.sh` resolves a Linux id to the current image (versions.env), so a
+version bump reaches every caller unchanged (rule 3). `TOOLCHAIN` inside the image keeps the version.
 
 | id | runner | provided by |
 |---|---|---|
-| `linux-gnu-16.2` | ubuntu-latest | container `gnu-16.2` (`-gui` with `display: true`) |
-| `linux-nvhpc-26.9` | ubuntu-latest | container `nvhpc-26.9` (compile and CPU run only) |
-| `linux-oneapi-2026.2` | ubuntu-latest | container `oneapi-2026.2` |
+| `linux-gnu` | ubuntu-24.04 | container `gnu-16.2` (`-gui` with `display: true`) |
+| `linux-nvhpc` | ubuntu-24.04 | container `nvhpc-26.9` (compile and CPU run only) |
+| `linux-oneapi` | ubuntu-24.04 | container `oneapi-2026.2` |
 | `macos-gnu` | macos-15 (arm64) | `setup-macos` (Homebrew gcc, the WSL major) |
 | `windows-gnu` | windows-latest | `setup-windows` (MSYS2 UCRT64) |
 
@@ -114,7 +114,7 @@ jobs:
   matrix:
     uses: szaghi/fortran-toolchains/.github/workflows/matrix.yml@v1
     with:
-      toolchains: linux-gnu-16.2 linux-nvhpc-26.9 linux-oneapi-2026.2 macos-gnu windows-gnu
+      toolchains: linux-gnu linux-nvhpc linux-oneapi macos-gnu windows-gnu
       script: scripts/ci/matrix.sh
       display: true
       brew-packages: sdl3
@@ -125,9 +125,12 @@ jobs:
 ### Versioning
 
 A reusable workflow cannot use its own repository's actions by relative path (`./` resolves in the caller's
-checkout), and `uses:` takes no expressions: the workflows reference
-`szaghi/fortran-toolchains/.github/actions/<name>@v1`. Workflows, actions and the image tags they name are released
-together under one moving major tag (`v1`); callers pin `@v1`.
+checkout), and `uses:` takes no expressions. Decided in Phase 4: each workflow checks out this repository at its input
+`toolchains-ref` (default `v1`) into `.fortran-toolchains/` and uses the actions and scripts from there by local
+path. Pinning `@v1` inside the workflows instead would make the self-test run the released actions, not the commit
+under test; with the checkout, Selftest passes `toolchains-ref: ''` (this checkout). `v1` is a moving major tag that
+callers pin (`uses: .../matrix.yml@v1`); `scripts/release.sh X.Y.Z` tags a release and moves `v1` once Build,
+Contract and Selftest are green on it. Images are versioned by their own tags (`gnu-16.2`), resolved at run time.
 
 ## Ports
 

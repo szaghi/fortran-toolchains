@@ -88,6 +88,47 @@ Containers run only on Linux runners, so the other platforms get a composite act
 Homebrew, MSYS2 and the PPA are rolling: they cannot install an exact version. A component within the major of its pin
 is accepted with a warning annotation; another major fails the job (`check-versions.sh --policy major`).
 
+## Reusable workflows
+
+A project's CI is a few calls of this repository's workflows, pinned to the major tag `v1`:
+
+```yaml
+jobs:
+  test:                       # tests with coverage in an image; the coverage-docs artifact for the docs
+    uses: szaghi/fortran-toolchains/.github/workflows/test.yml@v1
+  matrix:                     # a project script on any toolchains, any OS
+    uses: szaghi/fortran-toolchains/.github/workflows/matrix.yml@v1
+    with:
+      toolchains: linux-gnu linux-nvhpc linux-oneapi macos-gnu windows-gnu
+      script: scripts/ci/matrix.sh
+  docs-examples:              # committed outputs must match their sources
+    uses: szaghi/fortran-toolchains/.github/workflows/generated.yml@v1
+    with:
+      command: bash scripts/docs_examples.sh
+      paths: docs/examples
+  fpm:                        # fpm test and release build, with the toolchain's compilers
+    uses: szaghi/fortran-toolchains/.github/workflows/fpm.yml@v1
+```
+
+| Workflow | What it does | Main inputs |
+|---|---|---|
+| `test.yml` | `FoBiS.py fetch` (when the project has dependencies), the coverage command (the scaffold's `makecoverage-analysis`), the coverage as output and summary, the coverage outputs under `docs/` packed for the docs (failing on an empty list) | `toolchain`, `command`, `pack-coverage` |
+| `matrix.yml` | the project script on each toolchain: Linux ones in the images, macOS and Windows through the setup actions; a display for GUI programs (Linux: the `-gui` image under Xvfb; Windows: Mesa llvmpipe) | `toolchains`, `script`, `display`, `*-packages`, `artifacts` |
+| `generated.yml` | the project's regeneration in an image, then any change or new file under the paths fails with the diff (docs examples, doctests) | `command`, `paths` |
+| `fpm.yml` | `fpm test`, `fpm build --profile release`, with `FPM_FC`/`FPM_CC`/`FPM_CXX` from the toolchain | `toolchain`, `test-command`, `build-command` |
+
+Every workflow takes `working-directory` (the project inside the repository) and `apt-packages`. A nightly run is a
+caller's `schedule` on any of them.
+
+**Toolchain ids carry no version** (`linux-gnu`, `linux-nvhpc`, `linux-oneapi`, `macos-gnu`, `windows-gnu`): the
+workflows resolve them to the current images (`scripts/plan.sh`, from `versions.env`), so a version bump reaches every
+project without touching its workflows.
+
+**Versions**: the workflows use this repository's actions and scripts from a checkout at their input `toolchains-ref`,
+default `v1`, the major tag the callers pin; `scripts/release.sh X.Y.Z` tags a release and moves `v1` once Build,
+Contract and Selftest are green on it. The *Selftest* workflow calls every workflow on `tests/fixture` with
+`toolchains-ref: ''` (this checkout), on all toolchains: the reusable workflows' gate.
+
 ## Locally
 
 ```bash

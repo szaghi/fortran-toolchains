@@ -38,6 +38,13 @@ docker run --rm -v "$PWD:/r" -w /r bash:3.2 bash tests/check-versions.sh
 # reproduce a project's CI failure inside the image
 docker run --rm -it -v $PWD:/work -w /work ghcr.io/szaghi/fortran-toolchains:gnu-16.2 bash
 
+# a reusable workflow locally: act >= 0.2.40 (reusable workflows; 0.2.97 works), on a throwaway git repository of the
+# tree (see Gotchas), the Linux jobs only
+act workflow_dispatch -W .github/workflows/selftest.yml -j matrix -P ubuntu-24.04=catthehacker/ubuntu:act-24.04 --pull=false
+
+# release the workflows (owner): tag vX.Y.Z, move v1; refuses unless Build, Contract and Selftest are green on HEAD
+scripts/release.sh 1.0.0 [--push]
+
 # CI status
 gh run list -L 5
 ```
@@ -82,6 +89,18 @@ never in the project's own tree: the container writes as root).
 - **Contract workflow** (`.github/workflows/contract.yml`): the published `full` images as job containers (their tags
   computed by `scripts/build.sh` from `versions.env`, never written in the workflow) and the three setups on their
   runners. Runs after a successful Build, and on changes to the actions or `common/`.
+- **Reusable workflows** (`workflow_call`: `test`, `matrix`, `generated`, `fpm`; README has the table): a `plan` job
+  resolves version-less toolchain ids (`linux-gnu`, `macos-gnu`, ...) through `scripts/plan.sh` (images from
+  `scripts/build.sh --tag`), then the work runs in the image as a job container, or through a setup action on macOS and
+  Windows. They take this repository's scripts and actions from a checkout at `toolchains-ref` (default `v1`) into
+  `.fortran-toolchains/`, used by local path: `uses:` takes no expressions, and pinning `@v1` inside a workflow would
+  test the released actions instead of the commit. `toolchains-ref: ''` means the caller's checkout (this repository).
+  The default `toolchains-repository` names this repository (a reusable workflow cannot know its own repository).
+- **Selftest** (`.github/workflows/selftest.yml`) calls every reusable workflow on `tests/fixture` (a tiny FoBiS
+  project with what each workflow drives) with `toolchains-ref: ''`: the gate of the workflows, on all toolchains.
+- **Release**: `v1` is a moving major tag; `scripts/release.sh X.Y.Z` tags and moves it once Build, Contract and
+  Selftest are green on HEAD. A breaking change of a workflow's inputs is a new major (`v2`) and a new default
+  `toolchains-ref`.
 - **CI (`.github/workflows/build.yml`)** builds and pushes one job per (vendor, flavour) on push to `main` (filtered by
   `paths`) or by `workflow_dispatch`. The layer cache is in the registry (`cache-<vendor>-<flavour>` tags): the GHA
   cache's 10 GB per repository cannot hold the NVIDIA SDK layer beside the others. A hosted `ubuntu-24.04` runner has
@@ -134,6 +153,10 @@ Environment that consumers rely on: `PATH` (venv, `/opt/tools/bin`, `/opt/cmake/
 - The macOS and Windows setups cannot be run locally: `setup/macos.sh` can be driven on Linux with a stub `brew`
   and `gfortran-16` pointing at a real gfortran (WSL's gcc 16.2 and Open MPI 5.0.11 stand in for Homebrew's), and
   `setup/linux-bare.sh` runs as-is in a plain `ubuntu:24.04` container.
+- **act and reusable workflows**: run act on a throwaway repository holding the tree (`git init`, one commit with
+  `-c commit.gpgsign=false`, `origin` set to the GitHub URL): in a git worktree `.git` points outside the container (a
+  workflow's `git` fails), and without `origin` act takes `github.repository` as `nektos/act`. act's artifact server
+  rejects `upload-artifact` v7 (`unknown field "mime_type"`): artifacts are gated on the runners only.
 - Editing `common/install-tools.sh` invalidates the `cmake` stage, hence every HDF5 build (a few minutes per vendor).
 
 - **Never edit a script while a background job runs it**: bash reads scripts incrementally, and the running process
