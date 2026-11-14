@@ -98,7 +98,9 @@ jobs:
           echo "FPM_CC=${FPM_CC:-$CC}"
           echo "FPM_CXX=${FPM_CXX:-$CXX}"
         } | tee -a "$GITHUB_ENV"
-        fpm --version | head -1
+        # sed reads all of fpm's output: head would exit after the first line, and the SIGPIPE fpm then gets fails the
+        # step under pipefail, now and then (18 runs in 300)
+        fpm --version | sed -n 1p
 
     - name: Tests
       if: inputs.test-command != ''

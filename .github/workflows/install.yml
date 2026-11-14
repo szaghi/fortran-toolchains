@@ -97,7 +97,7 @@ jobs:
           api -H 'Accept: application/octet-stream' -o "$dir/$name" "$url"
         done
         ls -l "$dir"
-        tarball=$(find "$dir" -maxdepth 1 -name '*.tar.gz' | head -1)
+        tarball=$(find "$dir" -maxdepth 1 -name '*.tar.gz' | sed -n 1p)   # not head: a SIGPIPE would fail the step
         [ -n "$tarball" ] || { echo "::error::$REPO $TAG has no tarball asset"; exit 1; }
         [ -f "$dir/install.sh" ] || { echo "::error::$REPO $TAG has no install.sh asset"; exit 1; }
         files=$(tar -tzf "$tarball" | sed -n 's%^[^/]*/\([^/]*\)$%\1%p')
