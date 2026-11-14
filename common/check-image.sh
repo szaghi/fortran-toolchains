@@ -20,6 +20,10 @@ case ${1:?usage: check-image.sh lite|full <mpifort>|gui} in
     "$fc" -I/opt/hdf5/include "$here/check.f90" -o check \
           -L/opt/hdf5/lib -lhdf5_fortran -lhdf5_f90cstub -lhdf5 -lz -ldl -lm
     mpirun -np 2 ./check
+    # the same program linked from the pkg-config files alone, without --static (as fpm's hdf5 metapackage does)
+    # shellcheck disable=SC2046 # word lists of flags
+    "$fc" $(pkg-config --cflags hdf5_fortran) "$here/check.f90" -o check-pc $(pkg-config --libs hdf5_fortran)
+    mpirun -np 2 ./check-pc
     printf 'program p\nend program p\n' > lz.f90 && "$fc" lz.f90 -o lz -llz4 -llzma && ./lz
     ;;
   gui)

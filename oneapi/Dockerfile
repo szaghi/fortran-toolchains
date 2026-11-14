@@ -76,6 +76,7 @@ RUN export DEBIAN_FRONTEND=noninteractive && apt-get update \
 COPY --from=cmake /opt/cmake /opt/cmake
 ENV PATH=/opt/cmake/bin:${PATH}
 COPY common/build-hdf5.sh /tmp/build-hdf5.sh
+COPY common/hdf5-static-pc.sh /tmp/hdf5-static-pc.sh
 RUN /tmp/build-hdf5.sh mpicc mpiifx
 
 # -------------------------------------------------------------------------------------------------------------- lite
@@ -139,6 +140,7 @@ COPY --from=build /opt/hdf5 /opt/hdf5
 
 ENV PATH=/opt/hdf5/bin:${PATH} \
     HDF5_ROOT=/opt/hdf5 \
+    PKG_CONFIG_PATH=/opt/hdf5/lib/pkgconfig:${PKG_CONFIG_PATH} \
     MPIFC=mpiifx \
     MPIRUN=mpirun
 

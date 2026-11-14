@@ -43,6 +43,8 @@ Nothing is installed when the job runs. The images set:
   `mpicc`, `mpirun`; Intel's `mpiifx` too) and the HDF5 tools; the SDK environment their own scripts would set
   (`NVHPC_ROOT`, the CUDA and math libraries; `CMPLR_ROOT`, `I_MPI_ROOT`), since no CI step sources them;
 - `HDF5_ROOT=/opt/hdf5` (CMake's `find_package(HDF5)`); a FoBiS varset points at `/opt/hdf5/lib` and `/opt/hdf5/include`
+- `PKG_CONFIG_PATH` with `/opt/hdf5/lib/pkgconfig`: fpm's `hdf5 = "*"` metapackage finds HDF5 there. The library is static
+  only, so its `.pc` files carry the whole link line (`hdf5_f90cstub`, `m`, `dl`, `z`) in `Libs`, also without `--static`
   (static libraries: link `hdf5_fortran hdf5_f90cstub hdf5 z dl m`);
 - with Open MPI (`gnu`, `nvhpc`'s HPC-X): `OMPI_ALLOW_RUN_AS_ROOT=1`, `OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1` (containers
   run as root) and oversubscription by default (`mpirun -np 4` on a 2-core runner); Intel MPI needs neither;

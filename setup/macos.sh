@@ -81,10 +81,12 @@ case ${1:?usage: macos.sh tools lite|full [packages...] | hdf5} in
         "$root/common/build-hdf5.sh" mpicc mpifort
     else
       echo "HDF5 restored from the cache: $home/hdf5"
+      "$root/common/hdf5-static-pc.sh" "$home/hdf5"   # a prefix cached before its pkg-config files were completed
     fi
     setenv MPIFC mpifort
     setenv MPIRUN mpirun
     setenv HDF5_ROOT "$home/hdf5"
+    setenv PKG_CONFIG_PATH "$home/hdf5/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
     addpath "$home/hdf5/bin"
     ;;
   *) echo "macos.sh: unknown phase $1" >&2; exit 2 ;;

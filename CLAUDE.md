@@ -135,7 +135,7 @@ workflows (`grep -rl fortran-toolchains ~/fortran/*/.github/workflows`; about 18
 installs what it alone needs through `toolchain_packages`, not through this image.
 
 Environment that consumers rely on: `PATH` (venv, `/opt/tools/bin`, `/opt/cmake/bin`, `/opt/hdf5/bin`,
-`/opt/openmpi/bin`), `HDF5_ROOT=/opt/hdf5` (CMake `find_package(HDF5)`), the static link line
+`/opt/openmpi/bin`), `HDF5_ROOT=/opt/hdf5` (CMake `find_package(HDF5)`), `PKG_CONFIG_PATH=/opt/hdf5/lib/pkgconfig` (fpm's `hdf5` metapackage; the `.pc` files carry `Libs.private` in `Libs`, completed by `common/hdf5-static-pc.sh`, since fpm calls pkg-config without `--static`; oneapi prepends it to the SDK's), the static link line
 `hdf5_fortran hdf5_f90cstub hdf5 z dl m`, `OMPI_ALLOW_RUN_AS_ROOT{,_CONFIRM}=1` (containers run as root), and
 `PRTE_MCA_rmaps_default_mapping_policy=:oversubscribe` (`mpirun -np 4` on a 2-core runner).
 

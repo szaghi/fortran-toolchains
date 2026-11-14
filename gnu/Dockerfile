@@ -54,6 +54,7 @@ ENV PATH=/opt/openmpi/bin:${PATH} \
 COPY --from=cmake /opt/cmake /opt/cmake
 ENV PATH=/opt/cmake/bin:${PATH}
 COPY common/build-hdf5.sh /tmp/build-hdf5.sh
+COPY common/hdf5-static-pc.sh /tmp/hdf5-static-pc.sh
 RUN /tmp/build-hdf5.sh mpicc mpif90
 
 # -------------------------------------------------------------------------------------------------------------- lite
@@ -117,6 +118,7 @@ COPY --from=build /opt/hdf5 /opt/hdf5
 ENV PATH=/opt/hdf5/bin:/opt/openmpi/bin:${PATH} \
     LD_LIBRARY_PATH=/opt/openmpi/lib \
     HDF5_ROOT=/opt/hdf5 \
+    PKG_CONFIG_PATH=/opt/hdf5/lib/pkgconfig \
     OMPI_ALLOW_RUN_AS_ROOT=1 \
     OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 \
     PRTE_MCA_rmaps_default_mapping_policy=:oversubscribe \
