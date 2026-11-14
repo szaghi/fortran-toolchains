@@ -149,8 +149,8 @@ Contract and Selftest are green on it. Images are versioned by their own tags (`
 
 Blockers met on the way, not toolchain issues: FiNeR and FLAP `CMakeLists.txt` declare stale `project(VERSION)`
 (the scaffold's `release.sh` refuses to release them); VTKFortran's fpm job and FOSSIL's Pages timeout are lost by a
-scaffold sync until `fpm` and `docs` absorb them; FOSSIL's nightly validation fails 2 of 35 programs (2026-11-12); PENF v2.0.1's `makefile` passes `-DR16P`, which the
-sources renamed `PENF_R16P`, so its make install fails (found by `install`, 2026-11-13; Selftest skips that leg).
+scaffold sync until `fpm` and `docs` absorb them; FOSSIL's nightly validation fails 2 of 35 programs (2026-11-12); PENF v2.0.1's `makefile` passed `-DR16P`, which the
+sources renamed `PENF_R16P`, so its make install failed (found by `install`, 2026-11-13; fixed in PENF v2.0.2).
 
 ## Deferred
 

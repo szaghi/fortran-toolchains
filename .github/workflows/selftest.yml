@@ -162,14 +162,13 @@ jobs:
         head -1 release-notes.md | grep -q '^## \[1.2.3\]'
         if grep -q '1.2.2' release-notes.md; then echo "the notes run into 1.2.2's section"; exit 1; fi
 
-  # a real release installed as its users do: PENF's latest; not its make leg, since v2.0.1's makefile still defines the
-  # R16P macro the sources renamed PENF_R16P (cpp turns the R16P kind into 1)
+  # a real release installed as its users do: PENF's latest, every build system its tarball carries (make, cmake,
+  # fobis, fpm)
   install:
     uses: ./.github/workflows/install.yml
     with:
       repository: szaghi/PENF
-      tag: v2.0.1
-      builds: cmake fobis fpm
+      tag: v2.0.2
       toolchains-ref: ''
 
   generated:
