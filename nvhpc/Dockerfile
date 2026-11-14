@@ -76,7 +76,7 @@ COPY --from=cmake /opt/cmake /opt/cmake
 ENV PATH=/opt/cmake/bin:${PATH}
 COPY common/build-hdf5.sh /tmp/build-hdf5.sh
 COPY common/hdf5-static-pc.sh /tmp/hdf5-static-pc.sh
-RUN /tmp/build-hdf5.sh mpicc mpifort
+RUN HDF5_ARCH_FLAGS=-tp=px /tmp/build-hdf5.sh mpicc mpifort
 
 # -------------------------------------------------------------------------------------------------------------- lite
 FROM sdk AS lite

@@ -172,6 +172,9 @@ Environment that consumers rely on: `PATH` (venv, `/opt/tools/bin`, `/opt/cmake/
   rejects `upload-artifact` v7 (`unknown field "mime_type"`): artifacts are gated on the runners only.
 - Editing `common/install-tools.sh` invalidates the `cmake` stage, hence every HDF5 build (a few minutes per vendor).
 
+- **nvc/nvfortran target the build machine's CPU by default (`-tp host`)**: anything the nvhpc image compiles (HDF5) gets
+  `HDF5_ARCH_FLAGS=-tp=px`, or it dies with SIGILL on a runner with an older CPU than Build's. The build-time checks
+  cannot see it (they run on the build machine); Contract can (2026-11-14: a rebuilt nvhpc HDF5 on an AVX-512 runner).
 - **Never edit a script while a background job runs it**: bash reads scripts incrementally, and the running process
   resumes at its old byte offset in the new file (a `syntax error near unexpected token` that is not in the file).
 - **Tags are mutable.** All consumers track the floating `:gnu-16.2`, so a push reaches every project's next CI run.
