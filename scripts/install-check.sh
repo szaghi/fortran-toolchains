@@ -6,8 +6,8 @@
 #
 # 1. the installer runs with --build BUILD --prefix PREFIX, FoBiS taken off PATH: the installer must bootstrap it when
 #    BUILD (or the project's [installer] rules) needs it, as on a user's machine;
-# 2. every pkg-config file it wrote resolves (pkg-config --cflags --libs), each -L directory holds each -l library,
-#    each -I directory holds module files;
+# 2. every pkg-config file it wrote resolves (pkg-config --cflags --libs) to at least one -l library and one -I
+#    directory, each -L directory holds each -l library, each -I directory holds module files;
 # 3. --uninstall leaves no file in PREFIX but the installer's FoBiS venv.
 set -uo pipefail
 
@@ -42,6 +42,8 @@ for pc in $pcs; do
       -I*) incdirs="$incdirs ${f#-I}" ;;
     esac
   done
+  [ -n "$libs" ] || { echo "::error::$pkg: Libs names no library (the build installed none)"; fails=1; }
+  [ -n "$incdirs" ] || { echo "::error::$pkg: Cflags names no -I directory (the build installed no module)"; fails=1; }
   for l in $libs; do
     found=0; for d in $libdirs; do ls "$d/lib$l".* > /dev/null 2>&1 && found=1; done
     [ "$found" = 1 ] || { echo "::error::$pkg: -l$l in none of$libdirs"; fails=1; }
