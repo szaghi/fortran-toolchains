@@ -2,6 +2,9 @@
 name       = fixture_deps
 repository = https://github.com/szaghi/fortran-toolchains
 
+[installer]
+name = fixture_deps
+
 [dependencies]
 deps_dir = src/third_party
 PENF     = https://github.com/szaghi/PENF :: tag=v2.0.2

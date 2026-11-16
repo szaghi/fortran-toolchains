@@ -1,9 +1,12 @@
 name: Install
 
 # Reusable: a published release installed as its users do, on a fresh runner (the linux-bare toolchain: gcc of the
-# versions.env major from the PPA, CMake, ninja, fpm, FoBiS; no image): the release's installer (its install.sh asset,
-# the FoBiS scaffold's) downloads the release's tarball and builds it with each build system the tarball carries
-# (make, cmake, fobis), and fpm builds the tarball's fpm.toml. Called by a project's release workflow after its
+# versions.env major from the PPA, CMake, ninja, fpm; no image): the release's installer (its install.sh asset, the
+# FoBiS scaffold's) installs the release with each build system the tarball carries. With the one-line installer
+# (interface 2, FoBiS#217: `install.sh --version`): once per build system with FoBiS off PATH (the installer
+# bootstraps it), the pkg-config files checked and --uninstall (scripts/install-check.sh), then the piped one-liner
+# with its default build; with an older installer: make, cmake, fobis through it, and fpm builds the tarball's
+# fpm.toml. Called by a project's release workflow after its
 # release job (see release.yml):
 #
 #   install:
@@ -83,7 +86,8 @@ jobs:
         # shellcheck disable=SC2086
         sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends $PACKAGES
 
-    # the release's assets: its installer, and its tarball to tell which build systems it carries
+    # the release's assets: its installer, and its tarball to tell which build systems it carries (older installers,
+    # interface 1: the steps install.sh --build <b> and fpm build below)
     - name: The release
       id: release
       env:
@@ -120,25 +124,54 @@ jobs:
           done
         fi
         [ -n "$legs" ] || { echo "::error::no build system in the $REPO $TAG tarball"; exit 1; }
-        echo "legs:$legs"
-        { echo "legs=$legs "; echo "tarball=$tarball"; } >> "$GITHUB_OUTPUT"
+        # the installer's interface: 2 is FoBiS#217's one-liner (--version), anything else the older --download one
+        installer=1; [ "$(bash "$dir/install.sh" --version 2> /dev/null | sed -n 1p)" = "install.sh 2" ] && installer=2
+        echo "legs:$legs; installer interface $installer"
+        { echo "legs=$legs "; echo "tarball=$tarball"; echo "installer=$installer"; } >> "$GITHUB_OUTPUT"
+
+    # interface 2 (FoBiS#217): the one-liner, once per build system the tarball ships, with FoBiS off PATH (the
+    # installer bootstraps it), the pkg-config files checked, then --uninstall (scripts/install-check.sh)
+    - name: install.sh 2 --build make
+      if: steps.release.outputs.installer == '2' && contains(steps.release.outputs.legs, ' make ')
+      run: .fortran-toolchains/scripts/install-check.sh "$RUNNER_TEMP/release/install.sh" make "$RUNNER_TEMP/prefix-make" --tag "$TAG" --fc "$FC"
+
+    - name: install.sh 2 --build cmake
+      if: steps.release.outputs.installer == '2' && contains(steps.release.outputs.legs, ' cmake ')
+      run: .fortran-toolchains/scripts/install-check.sh "$RUNNER_TEMP/release/install.sh" cmake "$RUNNER_TEMP/prefix-cmake" --tag "$TAG" --fc "$FC"
+
+    - name: install.sh 2 --build fobis
+      if: steps.release.outputs.installer == '2' && contains(steps.release.outputs.legs, ' fobis ')
+      run: .fortran-toolchains/scripts/install-check.sh "$RUNNER_TEMP/release/install.sh" fobis "$RUNNER_TEMP/prefix-fobis" --tag "$TAG" --fc "$FC"
+
+    - name: install.sh 2 --build fpm
+      if: steps.release.outputs.installer == '2' && contains(steps.release.outputs.legs, ' fpm ')
+      run: .fortran-toolchains/scripts/install-check.sh "$RUNNER_TEMP/release/install.sh" fpm "$RUNNER_TEMP/prefix-fpm" --tag "$TAG" --fc "$FC"
+
+    # the one-liner as its users run it: piped from the release, no --build, no terminal: the first of fobis, fpm,
+    # cmake, make that the tarball ships
+    - name: the one-liner, its default build
+      if: steps.release.outputs.installer == '2'
+      run: |
+        curl -fsSL "https://github.com/$REPO/releases/download/$TAG/install.sh" \
+          | bash -s -- --tag "$TAG" --fc "$FC" --prefix "$RUNNER_TEMP/prefix-default"
+        bash "$RUNNER_TEMP/release/install.sh" --uninstall --prefix "$RUNNER_TEMP/prefix-default"
 
     - name: install.sh --build make
-      if: contains(steps.release.outputs.legs, ' make ')
+      if: steps.release.outputs.installer != '2' && contains(steps.release.outputs.legs, ' make ')
       run: cd "$(mktemp -d)" && bash "$RUNNER_TEMP/release/install.sh" --repo "$REPO" --tag "$TAG" --download wget --build make
 
     - name: install.sh --build cmake
-      if: contains(steps.release.outputs.legs, ' cmake ')
+      if: steps.release.outputs.installer != '2' && contains(steps.release.outputs.legs, ' cmake ')
       run: cd "$(mktemp -d)" && bash "$RUNNER_TEMP/release/install.sh" --repo "$REPO" --tag "$TAG" --download wget --build cmake
 
     # fetches the fobos [dependencies], then builds the fobos default mode
     - name: install.sh --build fobis
-      if: contains(steps.release.outputs.legs, ' fobis ')
+      if: steps.release.outputs.installer != '2' && contains(steps.release.outputs.legs, ' fobis ')
       run: cd "$(mktemp -d)" && bash "$RUNNER_TEMP/release/install.sh" --repo "$REPO" --tag "$TAG" --download wget --build fobis
 
     # the tarball's fpm.toml, whatever the release's installer supports; fpm takes the compilers from FPM_*
     - name: fpm build
-      if: contains(steps.release.outputs.legs, ' fpm ')
+      if: steps.release.outputs.installer != '2' && contains(steps.release.outputs.legs, ' fpm ')
       env:
         TARBALL: ${{ steps.release.outputs.tarball }}
       run: |
