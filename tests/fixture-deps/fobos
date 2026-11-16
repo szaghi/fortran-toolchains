@@ -1,0 +1,21 @@
+[project]
+name       = fixture_deps
+repository = https://github.com/szaghi/fortran-toolchains
+
+[dependencies]
+deps_dir = src/third_party
+PENF     = https://github.com/szaghi/PENF :: tag=v2.0.2
+
+[modes]
+modes = static-gnu
+
+[static-gnu]
+compiler  = gnu
+cflags    = -c -O2
+mod_dir   = mod
+obj_dir   = obj
+build_dir = build
+src       = src/lib src/third_party/PENF/src/lib
+target    = fixture_deps.f90
+output    = libfixture_deps.a
+mklib     = static

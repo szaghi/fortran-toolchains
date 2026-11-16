@@ -1,0 +1,11 @@
+name = "fixture_deps"
+version = "1.0.0"
+
+[library]
+source-dir = "src/lib"
+
+[dependencies]
+PENF = { git = "https://github.com/szaghi/PENF", tag = "v2.0.2" }
+
+[install]
+library = true
