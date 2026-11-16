@@ -49,6 +49,10 @@ on:
         description: fetch the fobos [dependencies] (FoBiS at the versions.env pin) and bundle them in the tarball
         type: boolean
         default: true
+      artifact-name:
+        description: the name of the dry run's artifact (two dry runs in one workflow run need two names)
+        type: string
+        default: release
       dry-run:
         description: build the tarball and the notes, upload them as the release artifact, publish nothing
         type: boolean
@@ -161,7 +165,7 @@ jobs:
       if: inputs.dry-run
       uses: actions/upload-artifact@v7
       with:
-        name: release
+        name: ${{ inputs.artifact-name }}
         path: ${{ runner.temp }}/release
         if-no-files-found: error
         retention-days: 1

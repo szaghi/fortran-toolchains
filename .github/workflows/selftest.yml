@@ -9,6 +9,7 @@ on:
   push:
     branches: [main]
     paths: ['.github/workflows/**', '.github/actions/**', 'common/**', 'setup/**', 'scripts/**', 'tests/fixture/**',
+            'tests/fixture-deps/**',
             'versions.env']
   pull_request:
   workflow_dispatch:
@@ -161,6 +162,59 @@ jobs:
         cat release-notes.md
         head -1 release-notes.md | grep -q '^## \[1.2.3\]'
         if grep -q '1.2.2' release-notes.md; then echo "the notes run into 1.2.2's section"; exit 1; fi
+
+  # the release of a project with a dependency (tests/fixture-deps uses PENF), not published: the dependency bundled in
+  # the tarball (fortran-toolchains#3), the one-line installer (FoBiS#217) as an asset
+  release-deps:
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: v1.0.0
+      name: fixture_deps
+      dry-run: true
+      artifact-name: release-deps
+      working-directory: tests/fixture-deps
+      toolchains-ref: ''
+
+  # that release installed through its one-liner with each build system it ships, on a fresh runner as install.yml's
+  # (FoBiS off PATH: the installer bootstraps it; the pkg-config files checked; --uninstall)
+  installer:
+    needs: release-deps
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        build: [fobis, fpm, cmake]
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v7
+
+    - name: The release artifact
+      uses: actions/download-artifact@v8
+      with:
+        name: release-deps
+        path: ${{ runner.temp }}/release
+
+    - name: Toolchain
+      uses: ./.github/actions/setup-linux-bare
+
+    - name: The tarball carries the dependency
+      env:
+        TARBALL: ${{ needs.release-deps.outputs.tarball }}
+      run: |
+        cd "$RUNNER_TEMP/release" && tar -tzf "$TARBALL" > list
+        grep -qx 'fixture_deps-v1.0.0/src/third_party/PENF/src/lib/penf.F90' list
+        if grep -q '/\.git/' list; then echo "a .git directory in the tarball"; exit 1; fi
+        tar -xzf "$TARBALL"
+        [ "$(bash install.sh --version)" = "install.sh 2" ]
+
+    - name: install.sh --build ${{ matrix.build }}
+      env:
+        BUILD: ${{ matrix.build }}
+      run: |
+        scripts/install-check.sh "$RUNNER_TEMP/release/install.sh" "$BUILD" "$RUNNER_TEMP/prefix" \
+          --source "$RUNNER_TEMP/release/fixture_deps-v1.0.0" --fc "$FC"
 
   # a real release installed as its users do: PENF's latest, every build system its tarball carries (make, cmake,
   # fobis, fpm)
