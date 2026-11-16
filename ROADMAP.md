@@ -71,6 +71,7 @@ Inputs carry the project specifics (toolchain, fobos modes, check paths, package
 | `docs` (build on `workflow_run`, deploy with a long `deploy-pages` timeout) | scaffold docs.yml, FOSSIL's timeout patch, ADAM docs.yml, appelbe docs.yml | done (Phase 4): coverage `auto`/`run`/`none` (appelbe: `none`), `build-command` (ADAM's has no `predocs:build`), 30-minute deploy timeout |
 | `release`, `install` (bare runner, `setup-linux-bare`) | scaffold release.yml, install.yml | done (Phase 4): `release` with `dry-run`; `install` per build system the tarball carries |
 | nightly runs | FOSSIL validation.yml | a caller's `schedule` on `matrix` or `test`: no workflow of its own |
+| the one-line installer (`curl .../install.sh \| bash -s -- --build fobis\|fpm\|cmake\|make`) | the scaffold's `install.sh --download wget`, figure's own installer | #3 with FoBiS#217: `release` bundles the fobos dependencies, `install` runs every shipped build through the installer (interface 2) |
 
 `test` stays separate from `matrix` for now (its coverage feeds the docs artifact); merging them (`matrix` with one
 toolchain and `coverage: true`) is reconsidered once both exist.

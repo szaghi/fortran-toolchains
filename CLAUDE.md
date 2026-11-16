@@ -35,6 +35,10 @@ docker run --rm -v "$PWD:/repo:ro" -w /repo ghcr.io/szaghi/fortran-toolchains:gn
 bash tests/check-versions.sh
 docker run --rm -v "$PWD:/r" -w /r bash:3.2 bash tests/check-versions.sh
 
+# the release tarball with bundled dependencies, and the one-line installer of a release (fortran-toolchains#3)
+bash tests/release-tarball.sh     # tests/fixture-deps: PENF bundled, no .git, offline CMake build in gnu-16.2
+bash tests/install-check.sh       # its installer, every build, in ubuntu:24.04 set up by setup/linux-bare.sh
+
 # reproduce a project's CI failure inside the image
 docker run --rm -it -v $PWD:/work -w /work ghcr.io/szaghi/fortran-toolchains:gnu-16.2 bash
 
@@ -100,7 +104,10 @@ never in the project's own tree: the container writes as root).
 - **Selftest** (`.github/workflows/selftest.yml`) calls every reusable workflow on `tests/fixture` (a tiny FoBiS
   project with what each workflow drives) with `toolchains-ref: ''`: the gate of the workflows, on all toolchains. Its
   `docs` job deploys the fixture's site to this repository's Pages from `main` (https://szaghi.github.io/fortran-toolchains/);
-  `release` is a dry run (the fixture's v1.2.3 as an artifact); `install` installs PENF's latest release.
+  `release` is a dry run (the fixture's v1.2.3 as an artifact); `install` installs PENF's latest release; `release-deps`
+  is the dry-run release of `tests/fixture-deps` (a module using PENF: the dependency bundled) and `installer` installs
+  that artifact through its one-line installer with fobis, fpm and cmake (GitHub only: act has no artifact server;
+  `tests/install-check.sh` runs the same locally, `tests/release-tarball.sh` the bundling).
 - **docs, release, install** keep the scaffold's split: `docs` runs on the caller's `workflow_run` of CI and takes the
   coverage from test's `coverage-docs` artifact; `install` is a second job of the caller's release workflow (a release
   published with `GITHUB_TOKEN` starts no workflow). A called workflow gets at most the permissions its caller grants
@@ -175,6 +182,11 @@ Environment that consumers rely on: `PATH` (venv, `/opt/tools/bin`, `/opt/cmake/
 - **nvc/nvfortran target the build machine's CPU by default (`-tp host`)**: anything the nvhpc image compiles (HDF5) gets
   `HDF5_ARCH_FLAGS=-tp=px`, or it dies with SIGILL on a runner with an older CPU than Build's. The build-time checks
   cannot see it (they run on the build machine); Contract can (2026-11-14: a rebuilt nvhpc HDF5 on an AVX-512 runner).
+- **install.yml has two paths until every project has released with the one-line installer** (FoBiS#217): interface 2
+  (`install.sh --version`) through `scripts/install-check.sh`, else the older `--download wget` steps (Selftest's PENF
+  v2.0.2 install still takes them). Remove the old path once no caller's latest release ships the old script (#3 step 6).
+  `release.yml` bundles the fobos dependencies (`bundle-dependencies: true`): a project's CMake/make build must read them
+  from its `deps_dir` (as FiNeR's `add_subdirectory(src/third_party/...)`).
 - **Never edit a script while a background job runs it**: bash reads scripts incrementally, and the running process
   resumes at its old byte offset in the new file (a `syntax error near unexpected token` that is not in the file).
 - **Tags are mutable.** All consumers track the floating `:gnu-16.2`, so a push reaches every project's next CI run.
