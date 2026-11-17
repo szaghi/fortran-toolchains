@@ -2,7 +2,9 @@
 # install.yml's interface-2 path locally (fortran-toolchains#3): tests/fixture-deps' release tarball (its dependency
 # bundled by scripts/release-tarball.sh) installed through its one-line installer (FoBiS#217) with every build system it
 # ships, by scripts/install-check.sh, in a fresh ubuntu:24.04 set up by setup/linux-bare.sh as install.yml's runner is.
-# Needs docker, the network (the PPA, FoBiS's bootstrap, fpm's dependency) and fobis (or python3) for the bundling.
+# Needs docker, the network (the linux-bare toolchain's release, FoBiS's bootstrap, fpm's dependency) and fobis (or
+# python3) for the bundling. The toolchain: setup/linux-bare-gcc.env's pins, or LINUX_BARE_GCC_TAG/_ASSET/_SHA256 and
+# FORTRAN_TOOLCHAINS_GCC_URL (file:///path for a local build of tests/linux-bare-gcc.sh, mounted as is).
 #
 #   bash tests/install-check.sh [BUILD ...]        (default: fobis fpm cmake)
 set -uo pipefail
@@ -17,7 +19,10 @@ mkdir -p "$work/proj" "$work/src"
   || { cat "$work/tarball.log"; exit 1; }
 tar -xzf "$work/out/fixture_deps-v1.0.0.tar.gz" -C "$work/src"
 
-docker run --rm -v "$here:/ft:ro" -v "$work/src:/src:ro" -e BUILDS="$builds" ubuntu:24.04 bash -c '
+# the linux-bare toolchain: setup/linux-bare-gcc.env's pins, or these variables (a local build served by file://)
+gccdir=(); case ${FORTRAN_TOOLCHAINS_GCC_URL:-} in file://*) gccdir=(-v "${FORTRAN_TOOLCHAINS_GCC_URL#file://}:${FORTRAN_TOOLCHAINS_GCC_URL#file://}:ro") ;; esac
+docker run --rm -v "$here:/ft:ro" -v "$work/src:/src:ro" -e BUILDS="$builds" "${gccdir[@]}" \
+  -e LINUX_BARE_GCC_TAG -e LINUX_BARE_GCC_ASSET -e LINUX_BARE_GCC_SHA256 -e FORTRAN_TOOLCHAINS_GCC_URL ubuntu:24.04 bash -c '
   set -uo pipefail
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq > /dev/null && apt-get install -y -qq --no-install-recommends ca-certificates curl git > /dev/null

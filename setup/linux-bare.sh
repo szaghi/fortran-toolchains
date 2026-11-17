@@ -1,24 +1,27 @@
 #!/usr/bin/env bash
 # The linux-bare toolchain on a fresh Ubuntu runner, for the jobs that must test a fresh machine rather than an image
-# (installers): gcc/g++/gfortran of the GCC pin's major from the ubuntu-toolchain-r/test PPA (the only gcc 16 for
-# Ubuntu 24.04 is its snapshot, a same-major drift the checks warn about), CMake, ninja, fpm at their pins in /opt,
-# FoBiS pinned in a venv. Root or sudo. Called by .github/actions/setup-linux-bare in two phases, the action
-# restoring the cache of the compiler's packages between them (388 MB from the PPA for gcc 16, minutes to download):
+# (installers): gcc/g++/gfortran at the exact GCC pin, built from the GNU release by this repository and published as
+# its release asset (no PPA, no Launchpad), CMake, ninja, fpm at their pins in /opt, FoBiS pinned in a venv. Root or
+# sudo. Called by .github/actions/setup-linux-bare in two phases, the action restoring the cache of the compiler's
+# archive between them:
 #
-#   linux-bare.sh repo       the base packages; the PPA added, unless the compiler's packages come from this
-#                                  repository's bundle (setup/linux-bare-debs.env); prints the cache key as a step
-#                                  output (gcc=: the bundle's tag, or the compiler's PPA version)
-#   linux-bare.sh install    the compiler, from the bundle (downloaded once into $FORTRAN_TOOLCHAINS_HOME/debs, the
-#                                  cached directory, and checked against its pinned sha256) or else from the PPA
-#                                  (apt's archives in the same directory); the tools, unversioned links to the
-#                                  compilers ahead of the runner's own; exports the contract
-#   linux-bare.sh bundle DIR on a fresh Ubuntu: the PPA's packages of the compiler (those apt downloads that come from
-#                                  the PPA, not Ubuntu's archive) as DIR/linux-bare-debs-<arch>.tar.xz, its .sha256 and
-#                                  a manifest; prints the tag, the asset and the sha256 as outputs (debs.yml publishes
-#                                  them)
+#   linux-bare.sh repo       the base packages, and the libraries the compiler links at run time (gmp, mpfr, mpc,
+#                                  isl, zlib), from Ubuntu's archive; prints the cache key as a step output (gcc=: the
+#                                  toolchain's release tag)
+#   linux-bare.sh install    the compiler: the asset pinned in setup/linux-bare-gcc.env, downloaded once into
+#                                  $FORTRAN_TOOLCHAINS_HOME/gcc (the cached directory), checked against its pinned
+#                                  sha256, extracted at its prefix (/opt/gcc/bin/<GCC>, the WSL box's layout), its
+#                                  libraries registered with ldconfig; the tools, versioned and unversioned links to
+#                                  the compilers ahead of the runner's own; exports the contract. No pin, or the
+#                                  download or the check failing, is an error: there is no other source.
+#   linux-bare.sh build DIR  on a fresh Ubuntu: the GCC release of the pin from the GNU mirrors, its signature checked
+#                                  against GNU's keyring (the signer's fingerprint and the tarball's sha256 pinned in
+#                                  setup/linux-bare-gcc.env), built (C, C++, Fortran) and installed at the prefix,
+#                                  packed as DIR/<asset> with its .sha256 and a manifest; prints the tag, the asset and
+#                                  the sha256 as outputs (gcc.yml publishes them)
 #
-# The bundle removes Launchpad from every job but the one that builds it: a fresh runner downloads the packages from
-# this repository's release, and apt takes their Ubuntu dependencies from the runner's archive mirror.
+# The pins of setup/linux-bare-gcc.env can be overridden by the environment (gcc.yml's check, the tests), and
+# FORTRAN_TOOLCHAINS_GCC_URL replaces the releases' base URL (file:// in the tests).
 #
 # Writes to $GITHUB_ENV, $GITHUB_PATH and $GITHUB_OUTPUT inside a job; prints `export` lines otherwise.
 set -euo pipefail
@@ -26,15 +29,9 @@ set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 pins=$root/versions.env
 pin() { sed -n "s/^$1=//p" "$pins"; }
+gccpin() { local v; v=$(printenv "$1" || true); [ -n "$v" ] || v=$(sed -n "s/^$1=//p" "$root/setup/linux-bare-gcc.env"); echo "$v"; }
 sudo=; [ "$(id -u)" = 0 ] || sudo=sudo
 home=${FORTRAN_TOOLCHAINS_HOME:-$HOME/.fortran-toolchains}
-# the bundle's pins: the environment, else setup/linux-bare-debs.env
-debpin() { local v; v=$(printenv "$1" || true); [ -n "$v" ] || v=$(sed -n "s/^$1=//p" "$root/setup/linux-bare-debs.env"); echo "$v"; }
-debs_tag=$(debpin LINUX_BARE_DEBS_TAG)
-debs_asset=$(debpin LINUX_BARE_DEBS_ASSET)
-debs_sha=$(debpin LINUX_BARE_DEBS_SHA256)
-debs_url=${FORTRAN_TOOLCHAINS_DEBS_URL:-https://github.com/${FORTRAN_TOOLCHAINS_REPOSITORY:-szaghi/fortran-toolchains}/releases/download}
-bundled() { [ -n "$debs_tag" ] && [ -n "$debs_asset" ] && [ -n "$debs_sha" ]; }
 
 setenv() {
   if [ -n "${GITHUB_ENV:-}" ]; then printf '%s=%s\n' "$1" "$2" >> "$GITHUB_ENV"; else printf 'export %s=%q\n' "$1" "$2"; fi
@@ -47,74 +44,60 @@ output() {
   if [ -n "${GITHUB_OUTPUT:-}" ]; then printf '%s=%s\n' "$1" "$2" >> "$GITHUB_OUTPUT"; else printf '# %s=%s\n' "$1" "$2"; fi
 }
 
-major=$(pin GCC); major=${major%%.*}
-compilers="gcc-$major g++-$major gfortran-$major"
+gcc=$(pin GCC)
+major=${gcc%%.*}
+prefix=/opt/gcc/bin/$gcc
+tag=$(gccpin LINUX_BARE_GCC_TAG)
+asset=$(gccpin LINUX_BARE_GCC_ASSET)
+sha=$(gccpin LINUX_BARE_GCC_SHA256)
+url=${FORTRAN_TOOLCHAINS_GCC_URL:-https://github.com/${FORTRAN_TOOLCHAINS_REPOSITORY:-szaghi/fortran-toolchains}/releases/download}
 export DEBIAN_FRONTEND=noninteractive
 
 base() {
-  # a third-party source of the runner's image down (Launchpad's PPA on a GitHub runner) fails only its own index:
-  # warn and go on, the Ubuntu archive is what these packages, and the bundle's dependencies, come from
   $sudo apt-get update -qq || echo "::warning::linux-bare: apt-get update reported errors (a source down?)" >&2
-  $sudo apt-get install -y -qq --no-install-recommends software-properties-common gpg-agent ca-certificates curl \
-    unzip xz-utils make pkg-config python3-venv git > /dev/null
-}
-ppa() { $sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test > /dev/null; }
-
-# the bundle into $home/debs (once: a cached directory already holds it), checked against the pinned sha256
-fetch_bundle() {
-  local tmp
-  [ "$(cat "$home/debs/.bundle" 2> /dev/null)" = "$debs_tag" ] && return 0
-  tmp=$(mktemp -d)
-  if ! curl -fsSL --retry 3 -o "$tmp/$debs_asset" "$debs_url/$debs_tag/$debs_asset"; then
-    echo "linux-bare: the bundle $debs_tag/$debs_asset cannot be downloaded: the PPA instead" >&2; rm -rf "$tmp"; return 1
-  fi
-  if [ "$(sha256sum "$tmp/$debs_asset" | cut -d' ' -f1)" != "$debs_sha" ]; then
-    echo "linux-bare: the bundle $debs_tag/$debs_asset does not match its pinned sha256: the PPA instead" >&2
-    rm -rf "$tmp"; return 1
-  fi
-  $sudo rm -rf "$home/debs"; mkdir -p "$home/debs"
-  tar -xJf "$tmp/$debs_asset" -C "$home/debs"
-  echo "$debs_tag" > "$home/debs/.bundle"
-  rm -rf "$tmp"
+  $sudo apt-get install -y -qq --no-install-recommends ca-certificates curl unzip xz-utils make pkg-config \
+    python3-venv git binutils libc6-dev libgmp10 libmpfr6 libmpc3 libisl23 zlib1g "$@" > /dev/null
 }
 
-case ${1:?usage: linux-bare.sh repo|install|bundle DIR} in
+case ${1:?usage: linux-bare.sh repo|install|build DIR} in
   repo)
     base
-    if bundled; then
-      output gcc "$debs_tag"
-    else
-      ppa
-      output gcc "$(apt-cache policy "gcc-$major" | sed -n 's/^ *Candidate: *//p')"
-    fi
+    output gcc "${tag:-unpinned}"
     ;;
   install)
-    if bundled && fetch_bundle; then
-      # the bundle's packages by file: apt resolves their Ubuntu dependencies from the runner's archive, no PPA
-      echo "compiler packages: the bundle $debs_tag ($(find "$home/debs" -maxdepth 1 -name '*.deb' | wc -l) packages)"
-      $sudo apt-get install -y -qq --no-install-recommends "$home"/debs/*.deb > /dev/null
-    else
-      # no bundle, or it failed: the PPA (the repo phase did not add it when a bundle was pinned)
-      if bundled; then ppa; $sudo apt-get update -qq; fi
-      # apt downloads into (and installs from) the cached directory; packages already there are not downloaded again
-      mkdir -p "$home/debs/partial"
-      rm -f "$home/debs/.bundle"
-      # shellcheck disable=SC2086 # a list of package names
-      $sudo apt-get install -y -qq --no-install-recommends -o Dir::Cache::archives="$home/debs" $compilers > /dev/null
+    if [ -z "$tag" ] || [ -z "$asset" ] || [ -z "$sha" ]; then
+      echo "linux-bare: no toolchain pinned in setup/linux-bare-gcc.env (run the GCC workflow, then paste its pins)" >&2
+      exit 1
     fi
-    # apt (root) leaves partial/ (mode 700) and lock (600) there: back to the runner's user, or actions/cache cannot
-    # read the directory and only warns that it failed to save it
-    $sudo chown -R "$(id -u):$(id -g)" "$home/debs"
-    echo "compiler packages: $(find "$home/debs" -maxdepth 1 -name '*.deb' | wc -l) in $home/debs ($(du -sh "$home/debs" | cut -f1))"
+    mkdir -p "$home/gcc"
+    if [ "$(cat "$home/gcc/.tag" 2> /dev/null)" != "$tag" ] || [ ! -f "$home/gcc/$asset" ]; then
+      rm -f "$home/gcc/$asset" "$home/gcc/.tag"
+      curl -fsSL --retry 5 --retry-delay 10 -o "$home/gcc/$asset" "$url/$tag/$asset" \
+        || { echo "linux-bare: the toolchain $tag/$asset cannot be downloaded from $url" >&2; exit 1; }
+    fi
+    if [ "$(sha256sum "$home/gcc/$asset" | cut -d' ' -f1)" != "$sha" ]; then
+      rm -f "$home/gcc/$asset"
+      echo "linux-bare: the toolchain $tag/$asset does not match its pinned sha256" >&2; exit 1
+    fi
+    echo "$tag" > "$home/gcc/.tag"
+    $sudo tar -xJf "$home/gcc/$asset" -C /
+    [ -x "$prefix/bin/gfortran" ] || { echo "linux-bare: $asset has no $prefix/bin/gfortran" >&2; exit 1; }
+    # the compiler's runtime (libgfortran, libstdc++, libgcc_s) for every program it builds, without LD_LIBRARY_PATH
+    printf '%s\n' "$prefix/lib64" "$prefix/lib" | $sudo tee /etc/ld.so.conf.d/linux-bare-gcc.conf > /dev/null
+    $sudo ldconfig
+    echo "compiler: the toolchain $tag ($(du -sh "$home/gcc/$asset" | cut -f1)) at $prefix"
 
     $sudo env CMAKE="$(pin CMAKE)" NINJA="$(pin NINJA)" FPM="$(pin FPM)" "$root/common/install-tools.sh" cmake ninja fpm
     "$root/common/install-venv.sh" --fobis "$home/venv" "$pins"
 
-    # the unversioned names a project's makefile or fobos calls (gfortran, not gfortran-16) at the PPA's compilers,
-    # ahead of the runner's own gcc
+    # the names a project's makefile or fobos calls, unversioned (gfortran) and versioned (gfortran-16, the contract's
+    # FC), at the toolchain's compilers, ahead of the runner's own gcc
     mkdir -p "$home/bin"
-    for tool in gcc g++ gfortran gcov; do ln -sf "$(command -v "$tool-$major")" "$home/bin/$tool"; done
-    echo "gfortran: $("$home/bin/gfortran" -dumpfullversion) ($(readlink "$home/bin/gfortran"))"
+    for tool in gcc g++ gfortran gcov; do
+      ln -sf "$prefix/bin/$tool" "$home/bin/$tool"
+      ln -sf "$prefix/bin/$tool" "$home/bin/$tool-$major"
+    done
+    echo "gfortran: $("$home/bin/gfortran" -dumpfullversion) ($prefix)"
     addpath "$home/bin"
     addpath /opt/cmake/bin
     addpath /opt/tools/bin
@@ -126,29 +109,48 @@ case ${1:?usage: linux-bare.sh repo|install|bundle DIR} in
     setenv TOOLCHAIN_OS linux
     setenv TOOLCHAIN_FAMILY gnu
     ;;
-  bundle)
-    out=${2:?usage: linux-bare.sh bundle DIR}
-    base
-    ppa
-    arch=$(dpkg --print-architecture)
+  build)
+    out=${2:?usage: linux-bare.sh build DIR}
+    [ "$(gccpin GCC_SOURCE_VERSION)" = "$gcc" ] \
+      || { echo "linux-bare: the source pins are for GCC $(gccpin GCC_SOURCE_VERSION), versions.env says $gcc" >&2; exit 1; }
+    base gpgv build-essential libgmp-dev libmpfr-dev libmpc-dev libisl-dev zlib1g-dev file
     work=$(mktemp -d)
-    mkdir -p "$work/archives/partial" "$work/bundle" "$out"
-    # what apt would download for the compilers on this runner, then only the PPA's packages: their Ubuntu
-    # dependencies stay with the archive of the runner that installs them (the PPA's versions carry "ppa")
-    # shellcheck disable=SC2086 # a list of package names
-    $sudo apt-get install -y -qq --download-only --no-install-recommends -o Dir::Cache::archives="$work/archives" \
-      $compilers > /dev/null
-    for deb in "$work"/archives/*.deb; do
-      if dpkg-deb -f "$deb" Version | grep -q ppa; then cp "$deb" "$work/bundle/"; fi
+    mkdir -p "$out"
+    src=gcc-$gcc.tar.xz
+    # the release from the GNU mirrors (the redirector first), its signature against GNU's keyring
+    for m in https://ftpmirror.gnu.org/gcc https://ftp.gnu.org/gnu/gcc https://sourceware.org/pub/gcc/releases; do
+      if curl -fsSL --retry 3 -o "$work/$src" "$m/gcc-$gcc/$src" && curl -fsSL --retry 3 -o "$work/$src.sig" "$m/gcc-$gcc/$src.sig"; then
+        echo "source: $m/gcc-$gcc/$src"; break
+      fi
+      rm -f "$work/$src" "$work/$src.sig"
     done
-    version=$(apt-cache policy "gcc-$major" | sed -n 's/^ *Candidate: *//p')
-    tag="linux-bare-debs-gcc-$(printf '%s' "$version" | tr -c 'A-Za-z0-9.' '-')"
-    asset="linux-bare-debs-$arch.tar.xz"
-    (cd "$work/bundle" && for deb in *.deb; do dpkg-deb -f "$deb" Package Version | paste -sd' '; done) \
-      | sort > "$out/manifest-$arch.txt"
-    tar -cJf "$out/$asset" -C "$work/bundle" .
+    [ -f "$work/$src" ] || { echo "linux-bare: $src from no mirror" >&2; exit 1; }
+    curl -fsSL --retry 3 -o "$work/gnu-keyring.gpg" https://ftp.gnu.org/gnu/gnu-keyring.gpg \
+      || curl -fsSL --retry 3 -o "$work/gnu-keyring.gpg" https://ftpmirror.gnu.org/gnu-keyring.gpg
+    signer=$(gpgv --status-fd 1 --keyring "$work/gnu-keyring.gpg" "$work/$src.sig" "$work/$src" 2> /dev/null \
+      | sed -n 's/^\[GNUPG:\] VALIDSIG \([0-9A-F]*\) .*/\1/p')
+    [ "$signer" = "$(gccpin GCC_SOURCE_SIGNER)" ] \
+      || { echo "linux-bare: $src not signed by the pinned key (signer: ${signer:-none})" >&2; exit 1; }
+    [ "$(sha256sum "$work/$src" | cut -d' ' -f1)" = "$(gccpin GCC_SOURCE_SHA256)" ] \
+      || { echo "linux-bare: $src does not match its pinned sha256" >&2; exit 1; }
+    echo "source: signed by $signer, sha256 as pinned"
+    tar -xJf "$work/$src" -C "$work"
+    mkdir -p "$work/build"
+    # C, C++ and Fortran, no bootstrap (the runner's gcc 13 builds it once), the runtime and the libraries of Ubuntu's
+    # archive (gmp, mpfr, mpc, isl, zlib), which repo installs on the consumer's runner
+    (cd "$work/build" && "../gcc-$gcc/configure" --prefix="$prefix" --enable-languages=c,c++,fortran \
+      --disable-multilib --disable-bootstrap --disable-nls --with-system-zlib --enable-checking=release \
+      > "$out/configure.log" 2>&1) || { tail -30 "$out/configure.log"; exit 1; }
+    (cd "$work/build" && make -j"$(nproc)" > "$out/make.log" 2>&1) || { tail -40 "$out/make.log"; exit 1; }
+    (cd "$work/build" && $sudo make install-strip > "$out/install.log" 2>&1) || { tail -20 "$out/install.log"; exit 1; }
+    ubuntu=$(sed -n 's/^VERSION_ID="*\([^"]*\)"*$/\1/p' /etc/os-release)
+    arch=$(dpkg --print-architecture)
+    tag="linux-bare-gcc-$gcc-ubuntu$ubuntu"
+    asset="gcc-$gcc-ubuntu$ubuntu-$arch.tar.xz"
+    "$prefix/bin/gfortran" -v > "$out/manifest-$arch.txt" 2>&1
+    tar -cJf "$out/$asset" -C / "${prefix#/}"
     (cd "$out" && sha256sum "$asset" > "$asset.sha256")
-    echo "bundle: $(wc -l < "$out/manifest-$arch.txt") packages of the PPA, $(du -h "$out/$asset" | cut -f1), gcc-$major $version"
+    echo "toolchain: gfortran $("$prefix/bin/gfortran" -dumpfullversion) at $prefix, $(du -h "$out/$asset" | cut -f1)"
     output tag "$tag"
     output asset "$asset"
     output sha256 "$(cut -d' ' -f1 "$out/$asset.sha256")"

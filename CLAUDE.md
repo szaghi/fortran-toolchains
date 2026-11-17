@@ -39,10 +39,11 @@ docker run --rm -v "$PWD:/r" -w /r bash:3.2 bash tests/check-versions.sh
 bash tests/release-tarball.sh     # tests/fixture-deps: PENF bundled, no .git, offline CMake build in gnu-16.2
 bash tests/install-check.sh       # its installer, every build, in ubuntu:24.04 set up by setup/linux-bare.sh
 
-# the linux-bare compiler bundle (the PPA's packages, so that no runner needs Launchpad): built in one fresh ubuntu:24.04,
-# installed in another with Launchpad unreachable; a wrong sha256 refused. Publishing it: the Debs workflow (by hand),
-# then its three pin lines into setup/linux-bare-debs.env
-bash tests/linux-bare-debs.sh
+# the linux-bare compiler: GCC built from the signature-checked GNU release in one fresh ubuntu:24.04 (~20 min on 16
+# cores), installed in another with Launchpad unreachable; a wrong sha256 and no pin refused. Publishing it: the GCC
+# workflow (by hand), then its three pin lines into setup/linux-bare-gcc.env. A new GCC pin needs the source's three
+# lines there anew (version, the signer's fingerprint from `gpgv`, the tarball's sha256)
+bash tests/linux-bare-gcc.sh [OUT]
 
 # reproduce a project's CI failure inside the image
 docker run --rm -it -v $PWD:/work -w /work ghcr.io/szaghi/fortran-toolchains:gnu-16.2 bash
@@ -93,8 +94,11 @@ never in the project's own tree: the container writes as root).
   thin composite actions over `setup/macos.sh` (phases `tools` and `hdf5`, the HDF5 cache restored between
   them, keyed on the gfortran and Open MPI versions actually installed) and `setup/linux-bare.sh`; Windows is
   inline MSYS2. They read `versions.env` from `$GITHUB_ACTION_PATH/../../..` and check versions with
-  `check-versions.sh --policy major`: Homebrew, MSYS2 and the PPA are rolling, so a same-major drift warns, another
-  major fails. The images use the default `exact` policy.
+  `check-versions.sh --policy major`: Homebrew and MSYS2 are rolling, so a same-major drift warns, another major fails.
+  The images use the default `exact` policy, and so does linux-bare for GCC: its compiler is built by this repository
+  from the GNU release of the pin (`setup/linux-bare.sh build`, the GCC workflow, `setup/linux-bare-gcc.env`), at
+  `/opt/gcc/bin/<GCC>`, its runtime registered with ldconfig. There is no PPA and no fallback: a third-party package
+  source down (Launchpad, 2026-11-17) would otherwise fail every repository's first installer test.
 - **Contract workflow** (`.github/workflows/contract.yml`): the published `full` images as job containers (their tags
   computed by `scripts/build.sh` from `versions.env`, never written in the workflow) and the three setups on their
   runners. Runs after a successful Build, and on changes to the actions or `common/`.

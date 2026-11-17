@@ -1,0 +1,93 @@
+name: GCC
+
+# The linux-bare toolchain's compiler, built from the GNU release of the versions.env GCC pin (its signature and
+# sha256 checked against setup/linux-bare-gcc.env) and published as a release of this repository, so that a fresh
+# runner (install.yml, contract.yml's linux-bare, selftest) depends on no third-party package source: no PPA, no
+# Launchpad. Run by hand (Actions > GCC > Run workflow) when the GCC pin changes, then paste the three pin lines of
+# the run's summary into setup/linux-bare-gcc.env and commit them. A published toolchain is never replaced: a new
+# build of the same version needs its release deleted by hand first.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    outputs:
+      tag: ${{ steps.build.outputs.tag }}
+      asset: ${{ steps.build.outputs.asset }}
+      sha256: ${{ steps.build.outputs.sha256 }}
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v7
+
+    - name: GCC from the GNU release (signature and sha256 checked), C, C++, Fortran
+      id: build
+      run: setup/linux-bare.sh build "$RUNNER_TEMP/gcc"
+
+    - name: The build logs
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: gcc-build-logs
+        path: ${{ runner.temp }}/gcc/*.log
+
+    - name: Publish the toolchain
+      env:
+        GH_TOKEN: ${{ github.token }}
+        TAG: ${{ steps.build.outputs.tag }}
+        ASSET: ${{ steps.build.outputs.asset }}
+      run: |
+        dir=$RUNNER_TEMP/gcc
+        files=("$dir/$ASSET" "$dir/$ASSET.sha256" "$dir"/manifest-*.txt)
+        if gh release view "$TAG" > /dev/null 2>&1; then
+          if gh release view "$TAG" --json assets -q '.assets[].name' | grep -qx "$ASSET"; then
+            echo "::error::$TAG already has $ASSET: a published toolchain is never replaced"; exit 1
+          fi
+          gh release upload "$TAG" "${files[@]}"
+        else
+          gh release create "$TAG" "${files[@]}" --target "$GITHUB_SHA" --prerelease --latest=false \
+            --title "linux-bare compiler: $TAG" \
+            --notes "GCC built by setup/linux-bare.sh from the signature-checked GNU release, for the linux-bare toolchain (setup/linux-bare-gcc.env). The manifest is its gfortran -v."
+        fi
+
+  # the published toolchain installed on a fresh runner with Launchpad unreachable: what a consumer's job will do
+  check:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v7
+
+    - name: Launchpad unreachable
+      run: printf '127.0.0.1 %s\n' ppa.launchpadcontent.net ppa.launchpad.net launchpad.net api.launchpad.net | sudo tee -a /etc/hosts
+
+    - name: The toolchain from the release
+      env:
+        LINUX_BARE_GCC_TAG: ${{ needs.build.outputs.tag }}
+        LINUX_BARE_GCC_ASSET: ${{ needs.build.outputs.asset }}
+        LINUX_BARE_GCC_SHA256: ${{ needs.build.outputs.sha256 }}
+      run: |
+        setup/linux-bare.sh repo
+        setup/linux-bare.sh install
+
+    - name: Check the contract, the versions and a program
+      run: |
+        common/check-contract.sh
+        common/check-versions.sh --pins versions.env GCC
+        common/check-versions.sh --policy major --pins versions.env FPM CMAKE NINJA FOBIS
+        printf 'program p\nuse iso_fortran_env, only: compiler_version\nprint *, compiler_version()\nend program\n' > p.f90
+        "$FC" p.f90 -o p && ./p && ldd ./p | grep libgfortran
+
+    - name: The pins
+      env:
+        TAG: ${{ needs.build.outputs.tag }}
+        ASSET: ${{ needs.build.outputs.asset }}
+        SHA256: ${{ needs.build.outputs.sha256 }}
+      run: |
+        { echo '### The pins of setup/linux-bare-gcc.env'; echo '```'
+          echo "LINUX_BARE_GCC_TAG=$TAG"; echo "LINUX_BARE_GCC_ASSET=$ASSET"; echo "LINUX_BARE_GCC_SHA256=$SHA256"
+          echo '```'; } >> "$GITHUB_STEP_SUMMARY"

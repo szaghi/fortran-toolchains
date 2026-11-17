@@ -56,7 +56,7 @@ major of its pin warns, another major fails (`check-versions.sh --policy major`)
 |---|---|---|---|
 | `setup-macos` | Homebrew gcc (`FC=gfortran-<major>`), fpm, ninja, pkg-config; CMake (release binary) and FoBiS at their pins; `full`: Homebrew Open MPI + HDF5 at the pinned commit from source, cached; `CC`/`CXX` = Apple clang | `matrix` (figure, StringiFor), figure installer/fpm consumers | Homebrew: gcc 16.2.0, open-mpi 5.0.11, fpm 0.13.0, ninja 1.13.2 exact; hdf5-mpi 2.2.0 (hence the source build); cmake 4.5.0 (hence the binary) |
 | `setup-windows` | MSYS2 UCRT64 gcc-fortran, fpm, cmake, ninja, pkgconf, python + `python-pydantic`, FoBiS at its pin; lite only (no MS-MPI) | `matrix` (figure), fpm consumers | MSYS2: gcc-fortran 16.2.0, fpm 0.13.0, ninja 1.13.2 exact; cmake 4.4.5 (warns) |
-| `setup-linux-bare` | gcc/g++/gfortran of the GCC major from the `ubuntu-toolchain-r/test` PPA, CMake, ninja, fpm, FoBiS at their pins | install.yml, figure installer (a fresh machine, not an image) | the PPA's only gcc 16 for noble is the `16-20260315` snapshot (16.0.1): warns |
+| `setup-linux-bare` | gcc/g++/gfortran at the GCC pin, built by this repository from the GNU release and published as its release asset (the GCC workflow), CMake, ninja, fpm, FoBiS at their pins | install.yml, figure installer (a fresh machine, not an image) | exact; no PPA since 2026-11-17 (Launchpad's outage, and its 16.0.1 snapshot for a 16.2.0 pin) |
 
 ## Reusable workflows (`workflow_call`)
 

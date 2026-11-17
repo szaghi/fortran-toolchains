@@ -1,7 +1,7 @@
 name: Install
 
-# Reusable: a published release installed as its users do, on a fresh runner (the linux-bare toolchain: gcc of the
-# versions.env major from the PPA, CMake, ninja, fpm; no image): the release's installer (its install.sh asset, the
+# Reusable: a published release installed as its users do, on a fresh runner (the linux-bare toolchain: gcc at the
+# versions.env pin, built by this repository from the GNU release, CMake, ninja, fpm; no image): the release's installer (its install.sh asset, the
 # FoBiS scaffold's) installs the release with each build system the tarball carries. With the one-line installer
 # (interface 2, FoBiS#217: `install.sh --version`): once per build system with FoBiS off PATH (the installer
 # bootstraps it), the pkg-config files checked and --uninstall (scripts/install-check.sh), then the piped one-liner
