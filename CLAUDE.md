@@ -39,6 +39,11 @@ docker run --rm -v "$PWD:/r" -w /r bash:3.2 bash tests/check-versions.sh
 bash tests/release-tarball.sh     # tests/fixture-deps: PENF bundled, no .git, offline CMake build in gnu-16.2
 bash tests/install-check.sh       # its installer, every build, in ubuntu:24.04 set up by setup/linux-bare.sh
 
+# the linux-bare compiler bundle (the PPA's packages, so that no runner needs Launchpad): built in one fresh ubuntu:24.04,
+# installed in another with Launchpad unreachable; a wrong sha256 refused. Publishing it: the Debs workflow (by hand),
+# then its three pin lines into setup/linux-bare-debs.env
+bash tests/linux-bare-debs.sh
+
 # reproduce a project's CI failure inside the image
 docker run --rm -it -v $PWD:/work -w /work ghcr.io/szaghi/fortran-toolchains:gnu-16.2 bash
 

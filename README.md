@@ -84,8 +84,10 @@ Containers run only on Linux runners, so the other platforms get a composite act
   their pins; `full`: Homebrew Open MPI and HDF5 at the pinned commit built from source, cached. `CC`/`CXX` are Apple
   clang.
 - **Windows**: MSYS2 UCRT64 gfortran, fpm, CMake, ninja, pkgconf, Python, FoBiS at its pin. Lite only (no MPI).
-- **Fresh Linux**: gcc/g++/gfortran from the `ubuntu-toolchain-r/test` PPA (its gcc 16 is a 16.0.1 snapshot), CMake,
-  ninja, fpm, FoBiS at their pins.
+- **Fresh Linux**: gcc/g++/gfortran of the `ubuntu-toolchain-r/test` PPA (its gcc 16 is a 16.0.1 snapshot), CMake,
+  ninja, fpm, FoBiS at their pins. The compiler's packages come from this repository's own release (the bundle pinned
+  in `setup/linux-bare-debs.env`, published by the `Debs` workflow and checked against its sha256), so a runner never
+  depends on Launchpad; the PPA itself is the fallback when no bundle is pinned or its download fails.
 
 Homebrew, MSYS2 and the PPA are rolling: they cannot install an exact version. A component within the major of its pin
 is accepted with a warning annotation; another major fails the job (`check-versions.sh --policy major`).

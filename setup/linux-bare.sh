@@ -5,11 +5,20 @@
 # FoBiS pinned in a venv. Root or sudo. Called by .github/actions/setup-linux-bare in two phases, the action
 # restoring the cache of the compiler's packages between them (388 MB from the PPA for gcc 16, minutes to download):
 #
-#   linux-bare.sh repo       the PPA added; prints the compiler's PPA version as a step output (gcc=) for the
-#                                  cache key
-#   linux-bare.sh install    the compiler, apt's archives in $FORTRAN_TOOLCHAINS_HOME/debs (the cached directory:
-#                                  restored packages are not downloaded again), the tools, unversioned links to the
+#   linux-bare.sh repo       the base packages; the PPA added, unless the compiler's packages come from this
+#                                  repository's bundle (setup/linux-bare-debs.env); prints the cache key as a step
+#                                  output (gcc=: the bundle's tag, or the compiler's PPA version)
+#   linux-bare.sh install    the compiler, from the bundle (downloaded once into $FORTRAN_TOOLCHAINS_HOME/debs, the
+#                                  cached directory, and checked against its pinned sha256) or else from the PPA
+#                                  (apt's archives in the same directory); the tools, unversioned links to the
 #                                  compilers ahead of the runner's own; exports the contract
+#   linux-bare.sh bundle DIR on a fresh Ubuntu: the PPA's packages of the compiler (those apt downloads that come from
+#                                  the PPA, not Ubuntu's archive) as DIR/linux-bare-debs-<arch>.tar.xz, its .sha256 and
+#                                  a manifest; prints the tag, the asset and the sha256 as outputs (debs.yml publishes
+#                                  them)
+#
+# The bundle removes Launchpad from every job but the one that builds it: a fresh runner downloads the packages from
+# this repository's release, and apt takes their Ubuntu dependencies from the runner's archive mirror.
 #
 # Writes to $GITHUB_ENV, $GITHUB_PATH and $GITHUB_OUTPUT inside a job; prints `export` lines otherwise.
 set -euo pipefail
@@ -19,6 +28,13 @@ pins=$root/versions.env
 pin() { sed -n "s/^$1=//p" "$pins"; }
 sudo=; [ "$(id -u)" = 0 ] || sudo=sudo
 home=${FORTRAN_TOOLCHAINS_HOME:-$HOME/.fortran-toolchains}
+# the bundle's pins: the environment, else setup/linux-bare-debs.env
+debpin() { local v; v=$(printenv "$1" || true); [ -n "$v" ] || v=$(sed -n "s/^$1=//p" "$root/setup/linux-bare-debs.env"); echo "$v"; }
+debs_tag=$(debpin LINUX_BARE_DEBS_TAG)
+debs_asset=$(debpin LINUX_BARE_DEBS_ASSET)
+debs_sha=$(debpin LINUX_BARE_DEBS_SHA256)
+debs_url=${FORTRAN_TOOLCHAINS_DEBS_URL:-https://github.com/${FORTRAN_TOOLCHAINS_REPOSITORY:-szaghi/fortran-toolchains}/releases/download}
+bundled() { [ -n "$debs_tag" ] && [ -n "$debs_asset" ] && [ -n "$debs_sha" ]; }
 
 setenv() {
   if [ -n "${GITHUB_ENV:-}" ]; then printf '%s=%s\n' "$1" "$2" >> "$GITHUB_ENV"; else printf 'export %s=%q\n' "$1" "$2"; fi
@@ -35,19 +51,57 @@ major=$(pin GCC); major=${major%%.*}
 compilers="gcc-$major g++-$major gfortran-$major"
 export DEBIAN_FRONTEND=noninteractive
 
-case ${1:?usage: linux-bare.sh repo|install} in
+base() {
+  # a third-party source of the runner's image down (Launchpad's PPA on a GitHub runner) fails only its own index:
+  # warn and go on, the Ubuntu archive is what these packages, and the bundle's dependencies, come from
+  $sudo apt-get update -qq || echo "::warning::linux-bare: apt-get update reported errors (a source down?)" >&2
+  $sudo apt-get install -y -qq --no-install-recommends software-properties-common gpg-agent ca-certificates curl \
+    unzip xz-utils make pkg-config python3-venv git > /dev/null
+}
+ppa() { $sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test > /dev/null; }
+
+# the bundle into $home/debs (once: a cached directory already holds it), checked against the pinned sha256
+fetch_bundle() {
+  local tmp
+  [ "$(cat "$home/debs/.bundle" 2> /dev/null)" = "$debs_tag" ] && return 0
+  tmp=$(mktemp -d)
+  if ! curl -fsSL --retry 3 -o "$tmp/$debs_asset" "$debs_url/$debs_tag/$debs_asset"; then
+    echo "linux-bare: the bundle $debs_tag/$debs_asset cannot be downloaded: the PPA instead" >&2; rm -rf "$tmp"; return 1
+  fi
+  if [ "$(sha256sum "$tmp/$debs_asset" | cut -d' ' -f1)" != "$debs_sha" ]; then
+    echo "linux-bare: the bundle $debs_tag/$debs_asset does not match its pinned sha256: the PPA instead" >&2
+    rm -rf "$tmp"; return 1
+  fi
+  $sudo rm -rf "$home/debs"; mkdir -p "$home/debs"
+  tar -xJf "$tmp/$debs_asset" -C "$home/debs"
+  echo "$debs_tag" > "$home/debs/.bundle"
+  rm -rf "$tmp"
+}
+
+case ${1:?usage: linux-bare.sh repo|install|bundle DIR} in
   repo)
-    $sudo apt-get update -qq
-    $sudo apt-get install -y -qq --no-install-recommends software-properties-common gpg-agent ca-certificates curl \
-      unzip xz-utils make pkg-config python3-venv git > /dev/null
-    $sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test > /dev/null
-    output gcc "$(apt-cache policy "gcc-$major" | sed -n 's/^ *Candidate: *//p')"
+    base
+    if bundled; then
+      output gcc "$debs_tag"
+    else
+      ppa
+      output gcc "$(apt-cache policy "gcc-$major" | sed -n 's/^ *Candidate: *//p')"
+    fi
     ;;
   install)
-    # apt downloads into (and installs from) the cached directory; packages already there are not downloaded again
-    mkdir -p "$home/debs/partial"
-    # shellcheck disable=SC2086 # a list of package names
-    $sudo apt-get install -y -qq --no-install-recommends -o Dir::Cache::archives="$home/debs" $compilers > /dev/null
+    if bundled && fetch_bundle; then
+      # the bundle's packages by file: apt resolves their Ubuntu dependencies from the runner's archive, no PPA
+      echo "compiler packages: the bundle $debs_tag ($(find "$home/debs" -maxdepth 1 -name '*.deb' | wc -l) packages)"
+      $sudo apt-get install -y -qq --no-install-recommends "$home"/debs/*.deb > /dev/null
+    else
+      # no bundle, or it failed: the PPA (the repo phase did not add it when a bundle was pinned)
+      if bundled; then ppa; $sudo apt-get update -qq; fi
+      # apt downloads into (and installs from) the cached directory; packages already there are not downloaded again
+      mkdir -p "$home/debs/partial"
+      rm -f "$home/debs/.bundle"
+      # shellcheck disable=SC2086 # a list of package names
+      $sudo apt-get install -y -qq --no-install-recommends -o Dir::Cache::archives="$home/debs" $compilers > /dev/null
+    fi
     # apt (root) leaves partial/ (mode 700) and lock (600) there: back to the runner's user, or actions/cache cannot
     # read the directory and only warns that it failed to save it
     $sudo chown -R "$(id -u):$(id -g)" "$home/debs"
@@ -71,6 +125,34 @@ case ${1:?usage: linux-bare.sh repo|install} in
     setenv TOOLCHAIN linux-bare
     setenv TOOLCHAIN_OS linux
     setenv TOOLCHAIN_FAMILY gnu
+    ;;
+  bundle)
+    out=${2:?usage: linux-bare.sh bundle DIR}
+    base
+    ppa
+    arch=$(dpkg --print-architecture)
+    work=$(mktemp -d)
+    mkdir -p "$work/archives/partial" "$work/bundle" "$out"
+    # what apt would download for the compilers on this runner, then only the PPA's packages: their Ubuntu
+    # dependencies stay with the archive of the runner that installs them (the PPA's versions carry "ppa")
+    # shellcheck disable=SC2086 # a list of package names
+    $sudo apt-get install -y -qq --download-only --no-install-recommends -o Dir::Cache::archives="$work/archives" \
+      $compilers > /dev/null
+    for deb in "$work"/archives/*.deb; do
+      if dpkg-deb -f "$deb" Version | grep -q ppa; then cp "$deb" "$work/bundle/"; fi
+    done
+    version=$(apt-cache policy "gcc-$major" | sed -n 's/^ *Candidate: *//p')
+    tag="linux-bare-debs-gcc-$(printf '%s' "$version" | tr -c 'A-Za-z0-9.' '-')"
+    asset="linux-bare-debs-$arch.tar.xz"
+    (cd "$work/bundle" && for deb in *.deb; do dpkg-deb -f "$deb" Package Version | paste -sd' '; done) \
+      | sort > "$out/manifest-$arch.txt"
+    tar -cJf "$out/$asset" -C "$work/bundle" .
+    (cd "$out" && sha256sum "$asset" > "$asset.sha256")
+    echo "bundle: $(wc -l < "$out/manifest-$arch.txt") packages of the PPA, $(du -h "$out/$asset" | cut -f1), gcc-$major $version"
+    output tag "$tag"
+    output asset "$asset"
+    output sha256 "$(cut -d' ' -f1 "$out/$asset.sha256")"
+    $sudo rm -rf "$work"
     ;;
   *) echo "linux-bare.sh: unknown phase $1" >&2; exit 2 ;;
 esac
