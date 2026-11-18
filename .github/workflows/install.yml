@@ -156,6 +156,23 @@ jobs:
           | bash -s -- --tag "$TAG" --fc "$FC" --prefix "$RUNNER_TEMP/prefix-default"
         bash "$RUNNER_TEMP/release/install.sh" --uninstall --prefix "$RUNNER_TEMP/prefix-default"
 
+    # the older installer finds its tarball through the GitHub API, anonymously (curl -s, no error check): runners
+    # share their address and its 60 requests an hour, so it fails at random ("jq: Cannot iterate over null", Selftest
+    # 2026-11-17/18). A curl first on PATH that authenticates the api.github.com calls; interface 2 never calls the API
+    - name: An authenticated GitHub API for the older installer
+      if: steps.release.outputs.installer != '2'
+      run: |
+        shim=$RUNNER_TEMP/api-shim; mkdir -p "$shim"
+        real=$(command -v curl)
+        {
+          echo '#!/usr/bin/env bash'
+          echo 'for a in "$@"; do case $a in https://api.github.com/*)'
+          echo "  exec $real -H \"Authorization: Bearer \$GH_TOKEN\" \"\$@\" ;; esac; done"
+          echo "exec $real \"\$@\""
+        } > "$shim/curl"
+        chmod +x "$shim/curl"
+        echo "$shim" >> "$GITHUB_PATH"
+
     - name: install.sh --build make
       if: steps.release.outputs.installer != '2' && contains(steps.release.outputs.legs, ' make ')
       run: cd "$(mktemp -d)" && bash "$RUNNER_TEMP/release/install.sh" --repo "$REPO" --tag "$TAG" --download wget --build make
