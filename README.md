@@ -14,7 +14,7 @@ images check it while building. The plan (more vendors, macOS/Windows setups, re
 | `ghcr.io/szaghi/fortran-toolchains:nvhpc-26.9` | nvfortran 26.9 (NVIDIA HPC SDK, Ubuntu 24.04), its HPC-X Open MPI 5.0 and CUDA 13.3, math libraries (cuFFT, cuBLAS, ...); HDF5 2.3.0 built by nvfortran; zlib, LZ4, LZMA, FFTW 3; the tools. Compile and CPU runs: the hosted runners have no GPU. Also `-lite` (no HDF5), `-gui` |
 | `ghcr.io/szaghi/fortran-toolchains:oneapi-2026.2` | Intel ifx 2026.2.0 and Intel MPI 2021.19.0 (Ubuntu 24.04, gcc 13 for the C side); HDF5 2.3.0 built by ifx; zlib, LZ4, LZMA, FFTW 3; the tools. Also `-lite` (no Intel MPI development files, no HDF5), `-gui` |
 
-**The tools**, in every image: FoBiS 3.19.2, ford 7.0.13, formal 0.2.19, numpy 2.5.3, h5py 3.16.0 (venv `/opt/venv`);
+**The tools**, in every image: FoBiS 3.19.2, ford 7.0.13, formal 0.2.20, numpy 2.5.3, h5py 3.16.0 (venv `/opt/venv`);
 fpm 0.13.0, CMake 4.4.4, ninja 1.13.2, Node 24.13.0 + npm, ShellCheck 0.9.0, zsh 5.9, fish 4.9.3, PowerShell 7.7.0;
 git, jq, GNU awk, make, pkg-config, curl.
 
